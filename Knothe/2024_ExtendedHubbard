@@ -1,0 +1,244 @@
+import numpy as np
+from qutip import destroy, tensor, qeye, basis
+from itertools import combinations
+from scipy.sparse import csr_matrix
+from scipy.sparse.linalg import eigsh
+import matplotlib.pyplot as plt
+
+class BLGDQD_Hubbard:
+    def __init__(self, params):
+        """
+        Extended Hubbard Hamiltonian for BLG DQD system according to Knothe 2024.
+        It does not consider valley mixing DeltaKK' and assumes B is along the z-axis.
+        It assumes only spin-conserving tunneling and no spin-orbit coupling between the dots (Extrinsic).
+        
+        Key parameters:
+        - t: hopping between dots
+        - U0: on-site interaction
+        - U1: neighbor interaction
+        - J: exchange integral
+        - G_zz, G_z0, G_0z, G_perp: short-range couplings
+        - X: inter-site exchange
+        - A: density-assisted hopping
+        - P: pair hopping
+        - DeltaSO: spin-orbit splitting
+        - gs: spin g-factor
+        - gv: valley g-factor
+        - muB: Bohr magneton
+        """
+        self.params = {
+            't': 0.1,
+            'U0': 10.0,
+            'U1': 5.0,
+            'J': 1.0,
+            'G_zz': 10.0,
+            'G_z0': 1.5,
+            'G_0z': 1.5,
+            'G_perp': 0.075,
+            'X': 0.5,
+            'A': 0.2,
+            'P': 0.1,
+            'DeltaSO': 0.04,  # meV
+            'gs': 2.0,
+            'gv': 15.0,
+            'muB': 5.788e-5,  # meV/T
+            'epsilon': [0.0, 0.0]  # dot energies
+        }
+        self.params.update(params)
+        
+        # Single-particle basis: 8 states indexed as in Appendix A
+        # |0⟩ = |l:↑+⟩, |1⟩ = |l:↓+⟩, |2⟩ = |l:↑-⟩, |3⟩ = |l:↓-⟩
+        # |4⟩ = |r:↑+⟩, |5⟩ = |r:↓+⟩, |6⟩ = |r:↑-⟩, |7⟩ = |r:↓-⟩
+        self.dim_single = 8
+        
+        # Precompute interaction tensor
+        self.U_tensor = self._build_interaction_tensor()
+    
+    def _single_particle_hamiltonian(self, B):
+        """Single-particle Hamiltonian including magnetic field effects."""
+        p = self.params
+        H = np.zeros((8, 8), dtype=np.complex128)
+        
+        # Diagonal terms (energies of each state)
+        for dot in [0, 1]:  # 0=left, 1=right
+            base = 4*dot
+            # Base energy of the dot
+            E0 = p['epsilon'][dot]
+            
+            # Zeeman terms and valley splitting
+            H[base+0, base+0] = E0 + 0.5*p['DeltaSO'] + 0.5*p['muB']*B*(p['gv'] + p['gs'])  # l/r:↑+
+            H[base+1, base+1] = E0 - 0.5*p['DeltaSO'] + 0.5*p['muB']*B*(p['gv'] - p['gs'])  # l/r:↓+
+            H[base+2, base+2] = E0 - 0.5*p['DeltaSO'] + 0.5*p['muB']*B*(-p['gv'] + p['gs']) # l/r:↑-
+            H[base+3, base+3] = E0 + 0.5*p['DeltaSO'] + 0.5*p['muB']*B*(-p['gv'] - p['gs']) # l/r:↓-
+        
+        # Hopping terms between dots (conserving spin and valley)
+        for s in range(4):  # 4 spin/valley combinations
+            H[s, s+4] = p['t']
+            H[s+4, s] = p['t'].conjugate()  # Hermiticity
+            
+        return H
+    
+    def _build_interaction_tensor(self):
+        """Builds the U_{hjkm} tensor according to Appendix A of the paper."""
+        p = self.params
+        U = np.zeros((8, 8, 8, 8), dtype=np.complex128)
+        
+        # Helper function to assign elements with fermionic symmetries
+        def set_U(h, j, k, m, value):
+            U[h,j,k,m] = value
+            U[j,h,k,m] = -value
+            U[h,j,m,k] = -value
+            U[j,h,m,k] = value
+        
+        # 1. On-site interactions (Appendix A, first lines)
+        set_U(0, 1, 1, 0, p['U0'] + p['J']*(p['G_zz'] + p['G_z0'] + p['G_0z']))
+        set_U(2, 3, 3, 2, p['U0'] + p['J']*(p['G_zz'] + p['G_z0'] + p['G_0z']))
+
+        set_U(0, 2, 2, 0, p['U0'] + p['J']*(p['G_zz'] - (p['G_z0'] + p['G_0z'])))
+        set_U(0, 3, 3, 0,  p['U0'] + p['J']*(p['G_zz'] - (p['G_z0'] + p['G_0z'])))
+        set_U(1, 2, 2, 1,  p['U0'] + p['J']*(p['G_zz'] - (p['G_z0'] + p['G_0z'])))
+        set_U(1, 3, 3, 1,  p['U0'] + p['J']*(p['G_zz'] - (p['G_z0'] + p['G_0z'])))
+
+        set_U(0, 2, 0, 2, 4*p['J']*p['G_perp'])
+        set_U(0, 3, 1, 2, 4*p['J']*p['G_perp'])
+        set_U(1, 3, 1, 3, 4*p['J']*p['G_perp'])
+        set_U(1, 2, 0, 3, 4*p['J']*p['G_perp'])
+        
+        # 2. Direct neighbor interaction (U1)
+        for i in range(4):
+            for j in range(4):
+                set_U(i, j+4, j+4, i, p['U1'])
+        
+        # 3. Inter-site exchange (X)
+        set_U(0, 4, 0, 4, p['X'])
+        set_U(1, 5, 1, 5, p['X'])
+        set_U(2, 6, 2, 6, p['X'])
+        set_U(3, 7, 3, 7, p['X'])
+        
+        # 4. Pair hoppings (P)
+        set_U(0, 1, 5, 4, p['P'])
+        set_U(0, 2, 6, 4, p['P'])
+        set_U(0, 3, 7, 4, p['P'])
+        set_U(1, 2, 6, 5, p['P'])
+        set_U(1, 3, 7, 5, p['P'])
+        set_U(2, 3, 7, 6, p['P'])
+        
+        # 5. Density-assisted hoppings (A)
+        set_U(1, 2, 6, 1, p['A'])
+        set_U(1, 3, 7, 1, p['A'])
+        set_U(2, 3, 7, 2, p['A'])
+        set_U(1, 6, 2, 1, p['A'])
+        set_U(0, 6, 2, 0, p['A'])
+        set_U(0, 7, 3, 0, p['A'])
+        set_U(1, 4, 0, 1, p['A'])
+        set_U(1, 7, 3, 1, p['A'])
+        set_U(1, 2, 6, 1, p['A'])
+        
+        return U
+    
+    def build_full_hamiltonian(self, B):
+        """Constructs the complete Hamiltonian in Fock space."""
+        # 1. Get single-particle and interaction matrices
+        H_single = self._single_particle_hamiltonian(B)
+        U_tensor = self.U_tensor
+        
+        # 2. Create creation/annihilation operators in full space
+        c_ops = [tensor([destroy(2) if i==j else qeye(2) for j in range(8)]) for i in range(8)]
+        cdag_ops = [op.dag() for op in c_ops]
+        
+        # 3. Build single-particle term
+        H_sp = 0
+        for j in range(8):
+            for k in range(8):
+                if np.abs(H_single[j,k]) > 1e-10:
+                    term = cdag_ops[j] * c_ops[k]  # Direct product since operators are in full space
+                    H_sp += H_single[j,k] * term
+        
+        # 4. Build interaction term
+        H_int = 0
+        for h in range(8):
+            for j in range(8):
+                for k in range(8):
+                    for m in range(8):
+                        if np.abs(U_tensor[h,j,k,m]) > 1e-10:
+                            term = cdag_ops[h] * cdag_ops[j] * c_ops[k] * c_ops[m]
+                            H_int += 0.5 * U_tensor[h,j,k,m] * term
+        
+        return H_sp + H_int
+    
+    def get_two_particle_subspace(self, H_full):
+        """Projects the Hamiltonian onto the antisymmetric 2-fermion subspace."""
+        # Generate all antisymmetric 2-particle states
+        basis_states = list(combinations(range(8), 2))
+        dim = len(basis_states)
+        
+        # Build projected matrix
+        H_proj = np.zeros((dim, dim), dtype=np.complex128)
+        
+        # Precompute all basis states
+        basis_vectors = []
+        for a, b in basis_states:
+            # Create state vector |ab⟩ in Fock space (2^8 dimensions)
+            state = np.zeros(2**8, dtype=np.complex128)
+            state[2**a + 2**b] = 1.0/np.sqrt(2)  # Normalized antisymmetric state
+            basis_vectors.append(state)
+        
+        # Convert H_full to dense matrix for more efficient calculations
+        H_mat = H_full.full()
+        
+        for i in range(dim):
+            for j in range(dim):
+                H_proj[i,j] = np.vdot(basis_vectors[i], H_mat @ basis_vectors[j])
+        
+        return csr_matrix(H_proj)
+
+def plot_spectrum_vs_B(params, B_values):
+    """Calculates and plots the spectrum as function of magnetic field."""
+    system = BLGDQD_Hubbard(params)
+    eigenvalues = []
+    
+    for B in B_values:
+        H_full = system.build_full_hamiltonian(B)
+        H_2p = system.get_two_particle_subspace(H_full)
+        
+        # Diagonalize (using sparse for efficiency)
+        eigvals = eigsh(H_2p, k=16, which='SA', return_eigenvectors=False)
+        eigenvalues.append(np.sort(eigvals))
+    
+    eigenvalues = np.array(eigenvalues).T
+    
+    plt.figure(figsize=(10, 6))
+    for i in range(eigenvalues.shape[0]):
+        plt.plot(B_values, eigenvalues[i], lw=1.5, label=f'State {i+1}')
+    
+    plt.xlabel('Magnetic field B (T)')
+    plt.ylabel('Energy (meV)')
+    plt.title('Two-particle spectrum vs magnetic field')
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+# Typical parameters based on the paper
+params = {
+    't': 0.1,    # Hopping between dots (meV)
+    'U0': 10.0,  # On-site interaction (meV)
+    'U1': 5.0,   # Inter-dot interaction (meV)
+    'J': 1.0,    # Exchange integral (meV)
+    'G_zz': 10.0,
+    'G_z0': 1.5,
+    'G_0z': 1.5,
+    'G_perp': 0.075,
+    'X': 0.5,
+    'A': 0.2,
+    'P': 0.1,
+    'DeltaSO': 0.04,  # Spin-orbit (meV)
+    'gs': 2.0,       # Spin g-factor
+    'gv': 15.0,      # Valley g-factor
+    'muB': 5.788e-5, # Bohr magneton (meV/T)
+    'epsilon': [0.0, 0.0]  # Dot energies
+}
+
+# Calculate and plot spectrum
+B_values = np.linspace(0, 10, 10)  # Magnetic field from 0 to 10 T
+plot_spectrum_vs_B(params, B_values)
