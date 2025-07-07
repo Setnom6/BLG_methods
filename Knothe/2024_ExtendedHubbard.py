@@ -1,7 +1,7 @@
 import numpy as np
 from qutip import destroy, tensor, qeye, basis
 from itertools import combinations
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, lil_matrix
 from scipy.sparse.linalg import eigsh
 import matplotlib.pyplot as plt
 
@@ -29,19 +29,19 @@ class BLGDQD_Hubbard:
         self.params = {
             't': 0.1,
             'U0': 10.0,
-            'U1': 5.0,
-            'J': 1.0,
-            'G_zz': 10.0,
-            'G_z0': 1.5,
-            'G_0z': 1.5,
+            'U1': 1.0,
+            'J': 1.0, # meV/Gperp
+            'G_zz': 0.75,
+            'G_z0': 0.0495,
+            'G_0z': 0.0495,
             'G_perp': 0.075,
             'X': 0.5,
             'A': 0.2,
             'P': 0.1,
-            'DeltaSO': 0.04,  # meV
+            'DeltaSO': -0.04,  # meV
             'gs': 2.0,
-            'gv': 15.0,
-            'muB': 5.788e-5,  # meV/T
+            'gv': 35.0,
+            'muB': 5.788e-2,  # meV/T
             'epsilon': [0.0, 0.0]  # dot energies
         }
         self.params.update(params)
@@ -50,9 +50,15 @@ class BLGDQD_Hubbard:
         # |0⟩ = |l:↑+⟩, |1⟩ = |l:↓+⟩, |2⟩ = |l:↑-⟩, |3⟩ = |l:↓-⟩
         # |4⟩ = |r:↑+⟩, |5⟩ = |r:↓+⟩, |6⟩ = |r:↑-⟩, |7⟩ = |r:↓-⟩
         self.dim_single = 8
+        self.basis = self._construct_basis()
+        self.stateToIndex = {state: i for i, state in enumerate(self.basis)}
         
         # Precompute interaction tensor
-        self.U_tensor = self._build_interaction_tensor()
+        self.uTensor = self._build_interaction_tensor()
+
+        # Compute orbital splitting for checking
+        DeltaOrb = - 0.5*(self.params['U0']-self.params['U1']) +0.5*np.sqrt((self.params['U0']-self.params['U1'])**2 + 16*self.params['t']**2)
+        print(f"Orbital splitting (DeltaOrb): {DeltaOrb:.4f} meV")
     
     def _single_particle_hamiltonian(self, B):
         """Single-particle Hamiltonian including magnetic field effects."""
@@ -85,10 +91,25 @@ class BLGDQD_Hubbard:
         
         # Helper function to assign elements with fermionic symmetries
         def set_U(h, j, k, m, value):
-            U[h,j,k,m] = value
-            U[j,h,k,m] = -value
-            U[h,j,m,k] = -value
-            U[j,h,m,k] = value
+            if abs(U[h,j,k,m]) > 0.0:
+                pass
+            else:
+                U[h,j,k,m] = value
+            
+            if abs(U[j,h,k,m]) > 0.0:
+                pass
+            else:
+                U[j,h,k,m] = -value
+
+            if abs(U[h,j,m,k]) > 0.0:
+                pass
+            else:
+                U[h,j,m,k] = -value
+            
+            if abs(U[j,h,m,k]) > 0.0:
+                pass
+            else:
+                U[j,h,m,k] = value
         
         # 1. On-site interactions (Appendix A, first lines)
         set_U(0, 1, 1, 0, p['U0'] + p['J']*(p['G_zz'] + p['G_z0'] + p['G_0z']))
@@ -128,69 +149,59 @@ class BLGDQD_Hubbard:
         set_U(1, 3, 7, 1, p['A'])
         set_U(2, 3, 7, 2, p['A'])
         set_U(1, 6, 2, 1, p['A'])
+        set_U(0, 1, 5, 0, p['A'])
+        set_U(0, 2, 6, 0, p['A'])
+        set_U(0, 3, 7, 0, p['A'])
+        set_U(0, 5, 1, 0, p['A'])
         set_U(0, 6, 2, 0, p['A'])
         set_U(0, 7, 3, 0, p['A'])
         set_U(1, 4, 0, 1, p['A'])
         set_U(1, 7, 3, 1, p['A'])
-        set_U(1, 2, 6, 1, p['A'])
+        set_U(2, 7, 3, 2, p['A'])
+        set_U(2, 4, 0, 2, p['A'])
+        set_U(2, 5, 1, 2, p['A'])
+        set_U(3, 4, 0, 3, p['A'])
+        set_U(3, 6, 2, 3, p['A'])
+        set_U(3, 5, 1, 3, p['A'])
         
         return U
     
-    def build_full_hamiltonian(self, B):
-        """Constructs the complete Hamiltonian in Fock space."""
-        # 1. Get single-particle and interaction matrices
-        H_single = self._single_particle_hamiltonian(B)
-        U_tensor = self.U_tensor
-        
-        # 2. Create creation/annihilation operators in full space
-        c_ops = [tensor([destroy(2) if i==j else qeye(2) for j in range(8)]) for i in range(8)]
-        cdag_ops = [op.dag() for op in c_ops]
-        
-        # 3. Build single-particle term
-        H_sp = 0
-        for j in range(8):
-            for k in range(8):
-                if np.abs(H_single[j,k]) > 1e-10:
-                    term = cdag_ops[j] * c_ops[k]  # Direct product since operators are in full space
-                    H_sp += H_single[j,k] * term
-        
-        # 4. Build interaction term
-        H_int = 0
-        for h in range(8):
-            for j in range(8):
-                for k in range(8):
-                    for m in range(8):
-                        if np.abs(U_tensor[h,j,k,m]) > 1e-10:
-                            term = cdag_ops[h] * cdag_ops[j] * c_ops[k] * c_ops[m]
-                            H_int += 0.5 * U_tensor[h,j,k,m] * term
-        
-        return H_sp + H_int
+    def _construct_basis(self):
+        """Builds the antymietric basis of 2 particles: c†_a c†_b |0⟩ con a < b"""
+        return [ (a, b) for a in range(self.dim_single) for b in range(a+1, self.dim_single) ]
     
-    def get_two_particle_subspace(self, H_full):
-        """Projects the Hamiltonian onto the antisymmetric 2-fermion subspace."""
-        # Generate all antisymmetric 2-particle states
-        basis_states = list(combinations(range(8), 2))
-        dim = len(basis_states)
-        
-        # Build projected matrix
-        H_proj = np.zeros((dim, dim), dtype=np.complex128)
-        
-        # Precompute all basis states
-        basis_vectors = []
-        for a, b in basis_states:
-            # Create state vector |ab⟩ in Fock space (2^8 dimensions)
-            state = np.zeros(2**8, dtype=np.complex128)
-            state[2**a + 2**b] = 1.0/np.sqrt(2)  # Normalized antisymmetric state
-            basis_vectors.append(state)
-        
-        # Convert H_full to dense matrix for more efficient calculations
-        H_mat = H_full.full()
-        
-        for i in range(dim):
-            for j in range(dim):
-                H_proj[i,j] = np.vdot(basis_vectors[i], H_mat @ basis_vectors[j])
-        
-        return csr_matrix(H_proj)
+    def build_N2_hamiltonian(self, B):
+        """Constructs the Hamiltonian for two particles in the antisymmetric subspace."""
+        self.tMatrix = self._single_particle_hamiltonian(B)
+        dimBasis = len(self.basis)
+        H = lil_matrix((dimBasis, dimBasis), dtype=np.complex128)
+
+        # Single-particle contributions
+        for (a, b), idx_ab in self.stateToIndex.items():
+            for i in range(self.dim_single):
+                # t_{i,a} contribute to a |i,b⟩
+                if i != b:
+                    newState = tuple(sorted((i, b)))
+                    sign = (-1)**(a > i)
+                    if newState in self.stateToIndex:
+                        H[self.stateToIndex[newState], idx_ab] += self.tMatrix[i, a] * sign
+
+                # t_{i,b} contributes to |i,a⟩
+                if i != a:
+                    newState = tuple(sorted((i, a)))
+                    sign = (-1)**(b > i)
+                    if newState in self.stateToIndex:
+                        H[self.stateToIndex[newState], idx_ab] += self.tMatrix[i, b] * sign
+
+        # Two-particle interaction contributions
+        for (a, b), idx_ab in self.stateToIndex.items():
+            for (c, d), idx_cd in self.stateToIndex.items():
+                H[idx_cd, idx_ab] += 0.5 * self.uTensor[c, d, a, b]
+
+        # Hermitian symmetry
+        H = 0.5 * (H + H.getH())
+
+        return csr_matrix(H)
 
 def plot_spectrum_vs_B(params, B_values):
     """Calculates and plots the spectrum as function of magnetic field."""
@@ -198,8 +209,7 @@ def plot_spectrum_vs_B(params, B_values):
     eigenvalues = []
     
     for B in B_values:
-        H_full = system.build_full_hamiltonian(B)
-        H_2p = system.get_two_particle_subspace(H_full)
+        H_2p = system.build_N2_hamiltonian(B)
         
         # Diagonalize (using sparse for efficiency)
         eigvals = eigsh(H_2p, k=16, which='SA', return_eigenvectors=False)
@@ -219,26 +229,46 @@ def plot_spectrum_vs_B(params, B_values):
     plt.tight_layout()
     plt.show()
 
-# Typical parameters based on the paper
-params = {
-    't': 0.1,    # Hopping between dots (meV)
-    'U0': 10.0,  # On-site interaction (meV)
-    'U1': 5.0,   # Inter-dot interaction (meV)
-    'J': 1.0,    # Exchange integral (meV)
-    'G_zz': 10.0,
-    'G_z0': 1.5,
-    'G_0z': 1.5,
-    'G_perp': 0.075,
-    'X': 0.5,
-    'A': 0.2,
-    'P': 0.1,
-    'DeltaSO': 0.04,  # Spin-orbit (meV)
-    'gs': 2.0,       # Spin g-factor
-    'gv': 15.0,      # Valley g-factor
-    'muB': 5.788e-5, # Bohr magneton (meV/T)
-    'epsilon': [0.0, 0.0]  # Dot energies
-}
 
+
+def obtain_eigenvectors_at_zero_B(params):
+    """Obtains the eigenvectors at zero magnetic field."""
+    system = BLGDQD_Hubbard(params)
+    H_2p = system.build_N2_hamiltonian(0.0)
+    
+    # Diagonalize (using sparse for efficiency)
+    eigvals, eigvecs = eigsh(H_2p, k=16, which='SA')
+    
+    # Sort eigenvalues and corresponding eigenvectors
+    idx = np.argsort(eigvals)
+    eigvals = eigvals[idx]
+    eigvecs = eigvecs[:, idx]
+
+    # Convert eigenvectors to the basis states
+    basis_states = [system.basis[i] for i in range(system.dim_single)]
+    eigenvectors = []
+    for vec in eigvecs.T:
+        state_vector = {state: vec[system.stateToIndex[state]] for state in system.basis}
+        eigenvectors.append(state_vector)
+    eigenvectors = np.array(eigenvectors)
+    eigvals = np.array(eigvals)
+    eigenvectors = np.array([np.array([state_vector[state] for state in system.basis]) for state_vector in eigenvectors])
+
+    # Print relation between eigenvectors and basis states ordered by absolute weight in the contribution
+    for i, vec in enumerate(eigenvectors):
+        contributionDict = {state: abs(vec[j]) for j, state in enumerate(system.basis)}
+        sorted_states = sorted(contributionDict.items(), key=lambda item: item[1], reverse=True)
+        print(f"Eigenvector {i}:")
+        for state, weight in sorted_states:
+            print(f"  {state}: {weight:.4f}")
+             
+    return eigvals, eigenvectors
+
+# Typical parameters based on the paper
+params = {}
+
+# Obtain eigenvectors at zero magnetic field
+eigenvalues, eigenvectors = obtain_eigenvectors_at_zero_B(params)
 # Calculate and plot spectrum
-B_values = np.linspace(0, 10, 10)  # Magnetic field from 0 to 10 T
+B_values = np.linspace(0, 1, 100)  # Magnetic field from 0 to 10 T
 plot_spectrum_vs_B(params, B_values)

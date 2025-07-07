@@ -18,7 +18,7 @@ U: Coulomb repulsion for same occupation of the dots
 
 """
 
-bArray = np.linspace(0,0.01,100)
+bArray = np.linspace(0,0.001,300)
 eigenvaluesList = []
 for Bvalue in bArray:
     # Parameters

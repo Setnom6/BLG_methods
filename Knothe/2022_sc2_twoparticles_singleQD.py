@@ -5,7 +5,7 @@ from scipy.linalg import eigvalsh
 """
 In this script an effective Hamiltonian of the first two orbital of a single QD for two particles (electron) is taken into account
 
-The basis used is directly the one of symmetric and antisymmetric single-triplety states given in equations 6 and 8 of Knothe 2022 (same ordering)
+The basis used is directly the one of symmetric and antisymmetric single-triplet states given in equations 6 and 8 of Knothe 2022 (same ordering)
 There they consider orbitals n and n+1. We will set N=1, so we consider the first two orbitals of the QD.
 
 In this basis the Hamitlonian is diagonal, and the eigenvalues are given by the energies of the two particles in the QD.
