@@ -13,7 +13,10 @@ i.e. the first **bra** electron indices are *(p, r)*, the **ket** indices are
 
 * **On‑site Hubbard U** for opposite spins in the same orbital is
   `(0, 1, 1, 0)`.
-* **Exchange / spin‑flip term** is `(0, 1, 0, 1)`.
+* **Exchange / spin‑flip term** is `(0, 1, 0, 1)`. 
+This is a virtual process in which state 0 indicates first orbital spin down and state 1 indicates first orbital spin up.
+Then, the global state does not change (is antisymmetric). it just meausure the exchange J interactrion. 
+In the on-site Hubbard U case the repulson due to Coulomb interaction is measured.
 
 The library automatically Hermitian‑symmetrises:
 
@@ -218,6 +221,9 @@ def generate_fock_basis(norb: int, n_elec: Optional[int | Sequence[int]] = None)
     )
     return [det for det in range(1 << norb) if popcount(det) in allowed]
 
+def get_occupied_orbitals(state: int, norb: int) -> list[int]:
+            return [i for i in range(norb) if (state >> i) & 1]
+
 #  Many‑body Hamiltonian
 
 class ManyBodyHamiltonian:
@@ -325,8 +331,8 @@ def single_triplet_example():
          (1, 1): -0.1,
          (2, 2): 1.0 + 0.1,
          (3, 3): 1.0 - 0.1,
-         (0, 2): 0.2,
-         (1, 3): 0.2}
+         (0, 2): 0.02,
+         (1, 3): 0.02}
 
     # On‑site Hubbard U in condensed‑matter ordering: (0,1,1,0)
     V = {(0, 1, 1, 0): 2.0,
@@ -338,9 +344,10 @@ def single_triplet_example():
          (0, 2, 0, 2): -0.0,
          (1, 3, 1, 3): -0.0,
          }
+    
     H = ManyBodyHamiltonian(4, h, V)
     basis = H.generate_basis(2)
-    eps = np.arange(-3, 3, 0.01)
+    eps = np.linspace(0.0, 2.5, 1000)
     eigenvals = np.zeros((len(eps), len(basis)), dtype=np.complex128)
     for i, epsi in enumerate(eps):
         h[(2, 2)] = epsi + 0.1
@@ -421,31 +428,18 @@ def double_orbital_spin_valley_double_dot():
          (1, 1): valley_zeeman_splitting - spin_zeeman_splitting + 0.5 * kane_mele_splitting,  # R1 down K
          (2, 2): spin_zeeman_splitting - valley_zeeman_splitting + 0.5 * kane_mele_splitting,  # R1 up K'
          (3, 3): -1 * valley_zeeman_splitting - spin_zeeman_splitting - 0.5 * kane_mele_splitting,  # R1 down K'
-         (4, 4): orbital_splitting + spin_zeeman_splitting + valley_zeeman_splitting - 0.5 * kane_mele_splitting,
-         # R2 up K
-         (5, 5): orbital_splitting + valley_zeeman_splitting - spin_zeeman_splitting + 0.5 * kane_mele_splitting,
-         # R2 down K
-         (6, 6): orbital_splitting + spin_zeeman_splitting - valley_zeeman_splitting + 0.5 * kane_mele_splitting,
-         # R2 up K'
-         (7, 7): orbital_splitting + -1 * valley_zeeman_splitting - spin_zeeman_splitting - 0.5 * kane_mele_splitting,
-         # R2 down K'
+         (4, 4): orbital_splitting + spin_zeeman_splitting + valley_zeeman_splitting - 0.5 * kane_mele_splitting,# R2 up K
+         (5, 5): orbital_splitting + valley_zeeman_splitting - spin_zeeman_splitting + 0.5 * kane_mele_splitting,# R2 down K
+         (6, 6): orbital_splitting + spin_zeeman_splitting - valley_zeeman_splitting + 0.5 * kane_mele_splitting,# R2 up K'
+         (7, 7): orbital_splitting + -1 * valley_zeeman_splitting - spin_zeeman_splitting - 0.5 * kane_mele_splitting,# R2 down K'
          (8, 8): eps_i + spin_zeeman_splitting + valley_zeeman_splitting - 0.5 * kane_mele_splitting,  # L1 up K
          (9, 9): eps_i + valley_zeeman_splitting - spin_zeeman_splitting + 0.5 * kane_mele_splitting,  # L1 down K
          (10, 10): eps_i + spin_zeeman_splitting - valley_zeeman_splitting + 0.5 * kane_mele_splitting,  # L1 up K'
-         (11, 11): eps_i + -1 * valley_zeeman_splitting - spin_zeeman_splitting - 0.5 * kane_mele_splitting,
-         # L1 down K'
-         (12,
-          12): eps_i + orbital_splitting + spin_zeeman_splitting + valley_zeeman_splitting - 0.5 * kane_mele_splitting,
-         # L2 up K
-         (13,
-          13): eps_i + orbital_splitting + valley_zeeman_splitting - spin_zeeman_splitting + 0.5 * kane_mele_splitting,
-         # L2 down K
-         (14,
-          14): eps_i + orbital_splitting + spin_zeeman_splitting - valley_zeeman_splitting + 0.5 * kane_mele_splitting,
-         # L2 up K'
-         (15,
-          15): eps_i + orbital_splitting + -1 * valley_zeeman_splitting - spin_zeeman_splitting - 0.5 * kane_mele_splitting,
-         # L2 down K'
+         (11, 11): eps_i + -1 * valley_zeeman_splitting - spin_zeeman_splitting - 0.5 * kane_mele_splitting,# L1 down K'
+         (12, 12): eps_i + orbital_splitting + spin_zeeman_splitting + valley_zeeman_splitting - 0.5 * kane_mele_splitting,# L2 up K
+         (13, 13): eps_i + orbital_splitting + valley_zeeman_splitting - spin_zeeman_splitting + 0.5 * kane_mele_splitting,# L2 down K
+         (14, 14): eps_i + orbital_splitting + spin_zeeman_splitting - valley_zeeman_splitting + 0.5 * kane_mele_splitting,# L2 up K'
+         (15, 15): eps_i + orbital_splitting + -1 * valley_zeeman_splitting - spin_zeeman_splitting - 0.5 * kane_mele_splitting,# L2 down K'
          }
 
     for i in range(16):
@@ -511,9 +505,10 @@ def double_orbital_spin_valley_double_dot():
 
     H = ManyBodyHamiltonian(16, h, V)
     basis = H.generate_basis(2)
-    eigenvals = np.zeros((len(eps), len(basis)), dtype=np.complex128)
+    eigenvals = np.zeros((len(bfields), len(basis)), dtype=np.complex128)
 
-    for i, eps_i in enumerate(eps):
+    for i, b_field in enumerate(bfields):
+        print("B-field:", b_field)
         spin_zeeman_splitting = 0.5 * gs * mub * b_field
         kane_mele_splitting = 0.06
         valley_zeeman_splitting = 0.5 * gv * mub * b_field
@@ -565,7 +560,7 @@ def double_orbital_spin_valley_double_dot():
         eigenvals[i] = eigval
     plt.figure()
     for i in range(len(basis)):
-        plt.scatter(eps, eigenvals[:, i], s=0.5)
+        plt.scatter(bfields, eigenvals[:, i], s=0.5)
     # plt.xlim(1.25, 1.75)
     plt.ylim(-4, 5)
     plt.show()
