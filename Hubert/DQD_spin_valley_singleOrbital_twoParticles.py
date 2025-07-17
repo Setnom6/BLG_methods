@@ -1,4 +1,4 @@
-from many_body_builder import ManyBodyHamiltonian, get_occupied_orbitals
+from many_body_builder import ManyBodyHamiltonian, get_occupied_orbitals, create_state_from_occupied_orbitals
 import numpy as np
 from scipy.linalg import eigh
 
@@ -13,6 +13,18 @@ from enum import Enum
 # DeltaKK and parallel magnetic field are included now, but we dont care about them if we cannot say which state is which.
 # The next step is to set realistic values (besides Knothe 2024) and see if the classification is correct.
 # The following would be to include the second spatial orbital and add the coupling between them all.
+
+# Update 16/7:
+# With the representation c_i c_j |0> is possible to obtain the 28 double Bell's basis, divied into (1,1), (2,0) and (0,2) states and do all the combinations
+# The procedure is, for example for |LL> |singlet spin> |triplet + valley>: 
+# Take all combinations which have L in both particles, oposite spin and valley +
+# If there is more than one, expand the double bell basis representation and rearrange them in c_i c_j rep to see the needed sign +-
+
+# Once that one have the complete basis, it is necessary to identify each eigenvector with one of those elements
+# As the magnetic field (or any other quantity) increases, the eigenvector can change, check also at the end of the crossings/anticrossings
+# Do the graph with colorsense rather than hacing each eigenvalue with different color
+
+# To obtain Rohling 2012 graphs, substract central (or lowest) eigenvalue to have a reference point.
 
 
 class DQDParameters(Enum):
@@ -52,6 +64,23 @@ class DQD_spin_valley_singleOrbital_twoParticles():
         Number of sites in the system.
     """
     def __init__(self, parameters_to_change=None):
+
+        if parameters_to_change is not None:
+            for key, value in parameters_to_change.items():
+                if key in self.parameters:
+                    self.parameters[key] = value
+                else:
+                    raise ValueError(f"Parameter {key} is not recognized.")
+                
+
+        self.N = 8 # Number of sites in the system (LUp+, LDown+, LUp-, LDown-, RUp+, RDown+, RUp-, RDown-)
+        self.numParticles = 2 # Number of particles in the system (two electrons)
+        h = self._build_single_particle_dict()
+        V = self._build_interaction_dict()
+        H = ManyBodyHamiltonian(self.N, h, V)
+        self.basis = H.generate_basis(self.numParticles)  # Generate the basis for two electrons
+
+    def _initialize_dicts(self):
         self.parameters = {
             'b_field': 0.0, # Magnetic field in Tesla along the z-axis
             'b_parallel': 0.0, # Magnetic field in Tesla along the x-axis
@@ -85,23 +114,56 @@ class DQD_spin_valley_singleOrbital_twoParticles():
             6: 'RUp-',
             7: 'RDown-'
         }
-
         self.labels_to_indices = {v: k for k, v in self.orbital_labels.items()}
+        self.singlet_triplet_correspondence = {
+            0: 'LL,S,T0', # Dot, Spin, Valley
+            1: 'LL,S,T+', # First 6 are (2,0)
+            2: 'LL,S,T-',
+            3: 'LL,T0,S',
+            4: 'LL,T+,S',
+            5: 'LL,T-,S',
+            6: 'LR,S,T0', # Next 6 are (1,1) with symmetric spatial part
+            7: 'LR,S,T+',
+            8: 'LR,S,T-',
+            9: 'LR,T0,S',
+            10: 'LR,T+,S',
+            11: 'LR,T+,S',
+            12: 'LR,S,S', # Next 10 are (1,1) with antisymmetruc spatial part
+            13: 'LR,T0,T0',
+            14: 'LR,T0,T+',
+            15: 'LR,T0,T-',
+            16: 'LR,T+,T0',
+            17: 'LR,T+,T+',
+            18: 'LR,T+,T-',
+            19: 'LR,T-,T0',
+            20: 'LR,T-,T+',
+            21: 'LR,T-,T-',
+            22: 'RR,S,T0', # Next 6 are (0,2)
+            23: 'RR,S,T+', 
+            24: 'RR,S,T-',
+            25: 'RR,T0,S',
+            26: 'RR,T+,S',
+            27: 'RR,T+,S',
+        }
 
-        if parameters_to_change is not None:
-            for key, value in parameters_to_change.items():
-                if key in self.parameters:
-                    self.parameters[key] = value
-                else:
-                    raise ValueError(f"Parameter {key} is not recognized.")
-                
-
-        self.N = 8 # Number of sites in the system (LUp+, LDown+, LUp-, LDown-, RUp+, RDown+, RUp-, RDown-)
-        self.numParticles = 2 # Number of particles in the system (two electrons)
-        h = self._build_single_particle_dict()
-        V = self._build_interaction_dict()
-        H = ManyBodyHamiltonian(self.N, h, V)
-        self.basis = H.generate_basis(self.numParticles)  # Generate the basis for two electrons
+        self.knothe_correspondence = {
+            0: 'S1', 
+            1: 'S2', 
+            2: 'S3',
+            3: 'S4',
+            4: 'S5',
+            5: 'S6',
+            6: 'AS1',
+            7: 'AS2',
+            8: 'AS3',
+            9: 'AS4',
+            10: 'AS5',
+            11: 'AS6',
+            12: 'AS7', 
+            13: 'AS8',
+            14: 'AS9',
+            15: 'AS10',
+        }
 
     def _build_single_particle_dict(self):
         """
@@ -300,18 +362,230 @@ class DQD_spin_valley_singleOrbital_twoParticles():
             "Orbital Symmetry": symmetry,
         }
     
-    def create_determinant_from_labels(self, labels: list) -> int:
+    
+    def create_singlet_triplet_basis(self):
         """
-        Creates a determinant from a list of orbital labels.
-        The labels should be in the format 'LUp+', 'LDown+', etc.
+        There are 28 basis elements:
+        - 16 for (1,1) configurations (all combinations of spin-valley singlet-triplets and viceversa, 8 spatially symmetric and 8 spatially antysimmetric)
+        - 8 for (2,0) configurations (combinations of antysimetric spin-valley singlet-triplets) as the spatial wavefunction is symmetric
+        - 8 for (0,2) configurations (combinations of antysimetric spin-valley singlet-triplets) as the spatial wavefunction is symmetric
+        
+        This method takes the basis expressed as integers numbers which represents bit determinants exprresing c_i^dag c_j^dag |0>
+        with i,j in 1,..,8 as in orbital_labels and the returns 28 vectors as coeficients expressed in this basis (28 elements per vector) which forms
+        the singlet-triplet bases in the spin-valley representation.
         """
-        state = 0
-        for label in labels:
-            for i, orb_label in self.orbital_labels.items():
-                if label == orb_label:
-                    state |= (1 << i)
-                    break
-        return state
+
+        list_of_vectors = []
+
+        # (2,0) configurations
+        list_of_activations = [
+            {create_state_from_occupied_orbitals([0,3]): +1,
+            create_state_from_occupied_orbitals([1,2]): -1},
+
+            {create_state_from_occupied_orbitals([0,1]): +1},
+
+            {create_state_from_occupied_orbitals([2,3]): +1},
+
+            {create_state_from_occupied_orbitals([0,3]): +1,
+            create_state_from_occupied_orbitals([1,2]): +1},
+
+            {create_state_from_occupied_orbitals([0,2]): +1},
+
+            {create_state_from_occupied_orbitals([1,3]): +1},
+        ]
+
+        for activation in list_of_activations:
+            list_of_vectors.append(self.create_normalized_vector(activation))
+
+        list_of_activations.clear()
+
+        # (1,1) orbital symmetric configurations
+
+        list_of_activations = [
+            {create_state_from_occupied_orbitals([0,7]):+1,
+             create_state_from_occupied_orbitals([2,5]):+1,
+             create_state_from_occupied_orbitals([1,6]):-1,
+             create_state_from_occupied_orbitals([3,4]):-1},
+
+             {create_state_from_occupied_orbitals([0,5]): +1,
+              create_state_from_occupied_orbitals([1,4]): -1},
+
+             {create_state_from_occupied_orbitals([2,7]): +1,
+              create_state_from_occupied_orbitals([3,6]): -1},
+
+             {create_state_from_occupied_orbitals([0,7]):+1,
+             create_state_from_occupied_orbitals([2,5]):-1,
+             create_state_from_occupied_orbitals([1,6]):+1,
+             create_state_from_occupied_orbitals([3,4]):-1},
+
+             {create_state_from_occupied_orbitals([0,6]): +1,
+              create_state_from_occupied_orbitals([2,4]): -1},
+
+             {create_state_from_occupied_orbitals([1,7]): +1,
+              create_state_from_occupied_orbitals([3,5]): -1}
+        ]
+
+        for activation in list_of_activations:
+            list_of_vectors.append(self.create_normalized_vector(activation))
+
+        list_of_activations.clear()
+
+        # (1,1) orbital antisymmetric configurations
+        list_of_activations = [
+            {create_state_from_occupied_orbitals([0,7]): +1,
+            create_state_from_occupied_orbitals([2,5]): -1,
+            create_state_from_occupied_orbitals([1,6]): -1,
+            create_state_from_occupied_orbitals([3,4]): +1},  # 12: S,S
+
+            {create_state_from_occupied_orbitals([0,7]): +1,
+            create_state_from_occupied_orbitals([2,5]): +1,
+            create_state_from_occupied_orbitals([1,6]): +1,
+            create_state_from_occupied_orbitals([3,4]): +1},  # 13: T0,T0
+
+            {create_state_from_occupied_orbitals([0,5]): +1,
+            create_state_from_occupied_orbitals([1,4]): +1},  # 14: T0,T+
+
+            {create_state_from_occupied_orbitals([2,7]): +1,
+            create_state_from_occupied_orbitals([3,6]): +1},  # 15: T0,T-
+
+            {create_state_from_occupied_orbitals([0,6]): +1,
+            create_state_from_occupied_orbitals([2,4]): +1},  # 16: T+,T0
+
+            {create_state_from_occupied_orbitals([0,4]): +1},  # 17: T+,T+
+
+            {create_state_from_occupied_orbitals([2,6]): +1},  # 18: T+,T-
+
+            {create_state_from_occupied_orbitals([1,7]): +1,
+            create_state_from_occupied_orbitals([3,5]): +1},  # 19: T-,T0
+
+            {create_state_from_occupied_orbitals([1,5]): +1},  # 20: T-,T+
+
+            {create_state_from_occupied_orbitals([3,7]): +1}   # 21: T-,T-
+        ]
+
+        for activation in list_of_activations:
+            list_of_vectors.append(self.create_normalized_vector(activation))
+
+        list_of_activations.clear()
+
+        # (0,2) configurations
+
+        list_of_activations = [
+            {create_state_from_occupied_orbitals([4,7]): +1,
+            create_state_from_occupied_orbitals([5,6]): -1},
+
+            {create_state_from_occupied_orbitals([4,5]): +1},
+
+            {create_state_from_occupied_orbitals([6,7]): +1},
+
+            {create_state_from_occupied_orbitals([4,7]): +1,
+            create_state_from_occupied_orbitals([5,6]): +1},
+
+            {create_state_from_occupied_orbitals([4,6]): +1},
+
+            {create_state_from_occupied_orbitals([5,7]): +1},
+        ]
+
+        for activation in list_of_activations:
+            list_of_vectors.append(self.create_normalized_vector(activation))
+
+
+        self.singlet_triplet_basis = list_of_vectors
+
+    def create_Knothe_basis(self):
+        """
+        There are 16 basis elements:
+        - 10 for antysimmetric orbital part
+        - 6 for symmetric orbital part
+        
+        This method takes the basis expressed as integers numbers which represents bit determinants exprresing c_i^dag c_j^dag |0>
+        with i,j in 1,..,8 as in orbital_labels and the returns 16 vectors as coeficients expressed in this basis (28 elements per vector) which forms
+        the symmetic-antisymmetric basis.
+        """
+
+        self.compute_some_characteristic_properties()
+        list_of_vectors = []
+
+        # orbital symmetric configurations
+
+        list_of_activations = [
+            {create_state_from_occupied_orbitals([0,7]): self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([3,4]): -self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([1,6]): self.b*self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([2,5]): -self.b*self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([0,3]): self.a2,
+             create_state_from_occupied_orbitals([1,2]): self.b*self.a2,
+             create_state_from_occupied_orbitals([4,7]): self.a2,
+             create_state_from_occupied_orbitals([5,6]): self.b*self.a2}, #S1
+
+             {create_state_from_occupied_orbitals([3,5]): self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([1,7]): -self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([5,7]): -self.a2,
+             create_state_from_occupied_orbitals([1,3]): -self.a2}, #S2
+
+             {create_state_from_occupied_orbitals([0,6]): self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([2,4]): -self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([0,2]): self.a2,
+             create_state_from_occupied_orbitals([4,6]): self.a2}, #S3
+
+             {create_state_from_occupied_orbitals([1,4]): self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([0,5]): -self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([0,1]): -self.a2,
+             create_state_from_occupied_orbitals([4,5]): -self.a2}, #S4
+
+             {create_state_from_occupied_orbitals([2,7]): self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([3,6]): -self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([2,3]): self.a2,
+             create_state_from_occupied_orbitals([6,7]): self.a2}, #S5
+
+             {create_state_from_occupied_orbitals([1,6]): self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([2,5]): -self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([3,4]): self.b*self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([0,7]): -self.b*self.a1/np.sqrt(2),
+             create_state_from_occupied_orbitals([1,2]): self.a2,
+             create_state_from_occupied_orbitals([0,3]): -self.b*self.a2,
+             create_state_from_occupied_orbitals([5,6]): self.a2,
+             create_state_from_occupied_orbitals([4,7]): -self.b*self.a2} #S1
+        ]
+
+        for activation in list_of_activations:
+            list_of_vectors.append(self.create_normalized_vector(activation))
+
+        list_of_activations.clear()
+
+        # orbital antisymmetric configurations
+        list_of_activations = [
+            {create_state_from_occupied_orbitals([0,7]): +1,
+            create_state_from_occupied_orbitals([3,4]): +1}, 
+
+            {create_state_from_occupied_orbitals([3,7]): +1}, 
+
+            {create_state_from_occupied_orbitals([0,4]): +1},  
+
+            {create_state_from_occupied_orbitals([2,7]): +1,
+            create_state_from_occupied_orbitals([3,6]): +1},  
+
+            {create_state_from_occupied_orbitals([0,6]): +1,
+            create_state_from_occupied_orbitals([2,4]): +1}, 
+
+            {create_state_from_occupied_orbitals([1,7]): +1,
+            create_state_from_occupied_orbitals([3,5]): +1}, 
+
+            {create_state_from_occupied_orbitals([0,5]): +1,
+            create_state_from_occupied_orbitals([1,4]): +1},   
+
+            {create_state_from_occupied_orbitals([1,6]): +1,
+            create_state_from_occupied_orbitals([2,5]): +1},   
+
+            {create_state_from_occupied_orbitals([2,6]): +1},  
+
+            {create_state_from_occupied_orbitals([1,5]): +1},  
+        ]
+
+        for activation in list_of_activations:
+            list_of_vectors.append(self.create_normalized_vector(activation))
+
+        self.knothe_basis = list_of_vectors
 
     
 
@@ -403,7 +677,6 @@ def represent_B_field_dependence(arrayToPlot, fixedParameters=None, number_of_ei
         eigvals[i] = eigval
         eigvectors[i] = eigv
 
-    #reordered_eigvals, _ = reorder_eigenvectors_by_overlap(eigvals, eigvectors)
 
     plt.figure()
     for i in range(number_of_eigenstates):
@@ -483,12 +756,16 @@ def represent_detuning_dependence(arrayToPlot, fixedParameters=None, number_of_e
         eigval, eigv = dqd.calculate_eigenvalues_and_eigenvectors(parameters_to_change=parameters_to_change)
         eigvals[i] = eigval
 
+    hs = 0.5*dqd.parameters[DQDParameters.MUB.value] * dqd.parameters[DQDParameters.GS.value]
+    hv = 0.5*dqd.parameters[DQDParameters.MUB.value]*dqd.parameters[DQDParameters.GV.value]
+
 
     plt.figure()
     for i in range(number_of_eigenstates):
-        plt.plot(eps, eigvals[:, i], label=f'Eigenstate {i+1}')
+        plt.plot(eps, eigvals[:, i]-eigvals[:,int(number_of_eigenstates/2)], label=f'Eigenstate {i+1}')
     plt.xlabel('E_i (meV)')
     plt.ylabel('Eigenvalue (meV)')
+    plt.ylim(-0.1, 0.1)
     plt.title('Eigenvalues of DQD Spin-Valley System')
     plt.show()
 
@@ -536,13 +813,14 @@ def zero_field_classification(fixedParameters=None, number_of_eigenstates=16):
     print("\n")
     
     for i in range(number_of_eigenstates):
-        classification = dqd.classify_superposition_state(eigv[:, i])
+        classification = dqd.classify_eigenstate(eigv[:, i])
         print(f"Eigenstate {i+1}:")
         print(f"Eigenvalue: {eigval[i]:.4f} meV")
-        print("Contributions:")
-        for contrib in classification['Contributions']:
-            if contrib['prob'] > 1e-5:
-                print(f"  State: {bin(contrib['state'])}, Probability: {contrib['prob']:.4f}, Classification: {contrib['classification']}")
+        print(f"Most similar state (Dot, Spin, Valley): {classification['most_similar_state']}")
+        print(f"Probability: {classification['probability']:.4f}")
+        for i in range(1,4):
+            print(f"{i+1} order in similarity: {classification['ordered_probabilities'][i]['label']}")
+            print(f"with probability: {classification['ordered_probabilities'][i]['probability']}")
         print("\n")
 
 if __name__ == "__main__":
@@ -553,13 +831,13 @@ if __name__ == "__main__":
     fixedParameters = {
         DQDParameters.B_FIELD.value: 0.00,  # Set B-field to zero for initial classification
         DQDParameters.B_PARALLEL.value: 0.0,  # Set parallel magnetic field to zero
-        DQDParameters.E_I.value: 00.0,  # Set detuning to
-        DQDParameters.T.value: 0.04,  # Set hopping parameter
+        DQDParameters.E_I.value: 0.0,  # Set detuning to zero
+        DQDParameters.T.value: 0.4,  # Set hopping parameter
         DQDParameters.DELTA_SO.value: -0.04,  # Set Kane
         DQDParameters.DELTA_KK.value: 0.02,  # Set valley mixing
         DQDParameters.T_SOC.value: 0.0,  # Set spin-flip
         DQDParameters.U0.value: U0,  # Set on-site Coul
-        DQDParameters.U1.value: 5.0,  # Set nearest-neighbour Coulomb potential
+        DQDParameters.U1.value: 0.1,  # Set nearest-neighbour Coulomb potential
         DQDParameters.X.value: 0.02,  # Set intersite exchange interaction
         DQDParameters.G_ORTHO.value: gOrtho,  # Set orthogonal component of tunneling corrections
         DQDParameters.G_ZZ.value:10*gOrtho,  # Set correction along
@@ -572,10 +850,10 @@ if __name__ == "__main__":
         DQDParameters.J.value: 0.075/gOrtho,  # Set renormalization parameter for Coulomb corrections
     }
 
-    number_of_eigenstates = 22  # Number of eigenstates to plot
-    arrayToPlot = np.linspace(3.0, 5.0, 1000)  # Example range for B-field or detuning
+    number_of_eigenstates = 6  # Number of eigenstates to plot
+    arrayToPlot = np.linspace(0.0, U0*1.2, 100)  # Example range for B-field or detuning
     zero_field_classification(fixedParameters=fixedParameters, number_of_eigenstates=number_of_eigenstates)
-    represent_detuning_dependence(arrayToPlot=arrayToPlot, fixedParameters=fixedParameters, number_of_eigenstates=number_of_eigenstates)
+    #represent_detuning_dependence(arrayToPlot=arrayToPlot, fixedParameters=fixedParameters, number_of_eigenstates=number_of_eigenstates)
     
     
         

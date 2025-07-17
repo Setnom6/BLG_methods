@@ -1,0 +1,8 @@
+- [ ] Reread the definition of the S and AS states in the written paper to see if everything is well defined
+- [ ] Understand why we don't get 6 S and 10 AS states and which parameter can we change to decoupled S from AS states apart from a heavy detuning
+- [ ] No that we have the coloring, we can try to implement some graphs from Knothe2024
+- [ ] Implement same graphs but with coloring referring to singlet-triplet basis of Rohling (trying to stay in (1,1) subspace)
+- [ ] Implement labelling in graphs to see which state is likely to be at initial point
+- [ ] Undestand how to use pymablock (or another) to restrict ourselves to a subspace
+- [ ] Try to figure out how to define singlet-Triplet or S-AS basis in the two orbitals case (16 single-particle states)
+- [ ] Find coupling values between ss, sp, pp orbitals to add to the setup

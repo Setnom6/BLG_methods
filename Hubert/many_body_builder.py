@@ -224,6 +224,104 @@ def generate_fock_basis(norb: int, n_elec: Optional[int | Sequence[int]] = None)
 def get_occupied_orbitals(state: int, norb: int) -> list[int]:
             return [i for i in range(norb) if (state >> i) & 1]
 
+def create_state_from_occupied_orbitals(occupied_orbitals: list[int]) -> int:
+    state = 0
+    for orbital in occupied_orbitals:
+        state |= (1 << orbital)
+    return state
+
+def create_determinant_from_labels(all_labels: dict, labels: list) -> int:
+    """
+    Creates a determinant from a list of orbital labels.
+    The labels should match exactly with those in all_labels.
+    
+    Args:
+        all_labels: Dictionary mapping orbital indices to their string labels
+        labels: List of orbital labels to include in the determinant
+        
+    Returns:
+        Integer representing the determinant bitmask
+        
+    Raises:
+        ValueError: If any label is not found or particle number doesn't match
+    """
+    state = 0
+    particles_found = 0
+    
+    # Check all requested labels exist
+    for label in labels:
+        found = False
+        for i, orb_label in all_labels.items():
+            if label == orb_label:
+                state |= (1 << i)
+                particles_found += 1
+                found = True
+                break
+        if not found:
+            raise ValueError(f"Label '{label}' not found in orbital labels dictionary")
+    
+    return state
+
+def create_normalized_vector(basis, values_to_activate: dict[int, int]) -> np.ndarray:
+        """
+        Builds a normalized vector with the elements indicated in values_to_activate
+        """
+        vector = np.zeros(len(basis))
+        
+        for i, element in enumerate(basis):
+            if element in values_to_activate:
+                vector[i] = values_to_activate[element]
+        
+        norm = np.linalg.norm(vector)
+        if norm > 0:
+            vector /= norm
+        
+        return vector
+
+def classify_eigenstate(preferred_basis, correspondence_with_determinant_basis, eigenstate: np.ndarray) -> dict:
+        """
+        Clasifies the given eigenstate in terms of the singlet-triplet or another basis.
+        
+        Parameters:
+        - eigenstate: np.ndarray, the state to classify expressed in the original determinant basis.
+        
+        Returns:
+        - A dict with the most similar singlet-triplet state and its probability.
+        - A list of dicts with all overlaps sorted from most to least probable.
+        """
+
+        correspondence = correspondence_with_determinant_basis
+        new_basis = preferred_basis
+
+
+        probabilities = []
+        for vector in new_basis:
+            overlap = np.vdot(vector, eigenstate)  # inner product
+            probability = np.abs(overlap) ** 2
+            probabilities.append(probability)
+
+        max_index = int(np.argmax(probabilities))
+        max_label = correspondence[max_index]
+        max_probability = probabilities[max_index]
+
+        # Crear lista ordenada de probabilidades
+        sorted_labels_and_probs = sorted(
+            zip(correspondence.values(), probabilities),
+            key=lambda x: x[1],
+            reverse=True
+        )
+        ordered_probabilities = [
+            {'label': label, 'probability': prob}
+            for label, prob in sorted_labels_and_probs
+        ]
+
+        return {
+            'most_similar_state': max_label,
+            'probability': max_probability,
+            'ordered_probabilities': ordered_probabilities
+        }
+
+
 #  Many‑body Hamiltonian
 
 class ManyBodyHamiltonian:
