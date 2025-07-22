@@ -1,18 +1,18 @@
 import numpy as np
 from scipy.linalg import eigh
 
-import matplotlib.pyplot as plt
-
 from enum import Enum
 
-from ManyBodyHamiltonian import ManyBodyHamiltonian
+from .ManyBodyHamiltonian import ManyBodyHamiltonian
 
 class DQDParameters(Enum):
     B_FIELD = 'b_field'
     B_PARALLEL = 'b_parallel'
     MUB = 'mub'
     GS = 'gs'
+    GSLFACTOR = 'gsLeftFactor'
     GV = 'gv'
+    GVLFACTOR = 'gvLeftFactor'
     DELTA_SO = 'DeltaSO'
     DELTA_KK = 'DeltaKK'
     E_I = 'E_i'
@@ -29,7 +29,7 @@ class DQDParameters(Enum):
     G_Z0 = 'g_z0'
     G_0Z = 'g_0z'
 
-class Knothe2024():
+class DQD_2particles_1orbital():
 
     def __init__(self, parameters_to_stablish=None):
 
@@ -49,8 +49,7 @@ class Knothe2024():
         H.generate_basis(self.n_elec)
         self.FSU = H.FSUtils
 
-        self.create_Knothe_basis()
-        self.create_singlet_triplet_basis()
+        self.call_basis_creators()
 
 
     def _initialize_dicts(self):
@@ -59,7 +58,9 @@ class Knothe2024():
             'b_parallel': 0.0, # Magnetic field in Tesla along the x-axis
             'mub': 0.05788, # Bohr magneton in meV/Tesla
             'gs': 2.0, # Spin g-factor
-            'gv': 28.0, # Valley g-factor (different for each spatial orbtial)
+            'gsLeftFactor': 1.0, # gsL = gsLeftFactor * gs (right)
+            'gv': 28.0, # Valley g-factor (different for each spatial orbital)
+            'gvLeftFactor': 1.0, # gvL = gvLeftFactor * gv (right)
             'DeltaSO': 0.04, # Kane Mele spin-orbit coupling in meV
             'DeltaKK': 0.0, # Valley mixing in meV
             'E_i': 0.0, # Single-particle energy level in eV expressed as a difference between the two dots
@@ -100,7 +101,7 @@ class Knothe2024():
             8: 'LR,S,T-',
             9: 'LR,T0,S',
             10: 'LR,T+,S',
-            11: 'LR,T+,S',
+            11: 'LR,T-,S',
             12: 'LR,S,S', # Next 10 are (1,1) with antisymmetruc spatial part
             13: 'LR,T0,T0',
             14: 'LR,T0,T+',
@@ -119,7 +120,7 @@ class Knothe2024():
             27: 'RR,T+,S',
         }
 
-        self.knothe_correspondence = {
+        self.symmetric_antisymmetric_correspondence = {
             0: 'S1', 
             1: 'S2', 
             2: 'S3',
@@ -147,6 +148,8 @@ class Knothe2024():
         b_parallel = self.parameters['b_parallel']
         mub = self.parameters['mub']
         gs = self.parameters['gs']
+        gsLeftFactor = self.parameters['gsLeftFactor']
+        gvLeftFactor = self.parameters['gvLeftFactor']
         gv = self.parameters['gv']
         DeltaSO = self.parameters['DeltaSO']
         DeltaKK = self.parameters['DeltaKK']
@@ -154,24 +157,27 @@ class Knothe2024():
         t_soc = self.parameters['t_soc']
         Ei = self.parameters['E_i']
 
-        spin_zeeman_splitting = 0.5 * gs * mub * b_field
-        spin_parallel_splitting = 0.5 * gs * mub * b_parallel
-        valley_zeeman_splitting = 0.5 * gv * mub * b_field
+        spin_zeeman_splitting_left = 0.5 * gs * mub * b_field * gsLeftFactor
+        spin_parallel_splitting_left = 0.5 * gs * mub * b_parallel * gsLeftFactor
+        valley_zeeman_splitting_left = 0.5 * gv * mub * b_field * gvLeftFactor
+        spin_zeeman_splitting_right = 0.5 * gs * mub * b_field
+        spin_parallel_splitting_right = 0.5 * gs * mub * b_parallel
+        valley_zeeman_splitting_right = 0.5 * gv * mub * b_field
         kane_mele_splitting = 0.5 * DeltaSO
 
         # Intradot dynamics
-        h = {(0, 0): kane_mele_splitting + valley_zeeman_splitting + spin_zeeman_splitting,  # LUp+
-         (1, 1): - kane_mele_splitting + valley_zeeman_splitting - spin_zeeman_splitting,  # LDown+
-         (2, 2): - kane_mele_splitting - valley_zeeman_splitting + spin_zeeman_splitting,  # LUp-
-         (3, 3): kane_mele_splitting - valley_zeeman_splitting - spin_zeeman_splitting,  # LDown-
-         (4, 4): Ei + kane_mele_splitting + valley_zeeman_splitting + spin_zeeman_splitting, # RUp+
-         (5, 5): Ei - kane_mele_splitting + valley_zeeman_splitting - spin_zeeman_splitting, # RDown+
-         (6, 6): Ei - kane_mele_splitting - valley_zeeman_splitting + spin_zeeman_splitting, # RUp-
-         (7, 7): Ei + kane_mele_splitting - valley_zeeman_splitting - spin_zeeman_splitting, # RDown-
-         (0, 1): spin_parallel_splitting,
-         (2, 3): spin_parallel_splitting,
-         (4, 5): spin_parallel_splitting,
-         (6, 7): spin_parallel_splitting,
+        h = {(0, 0): kane_mele_splitting + valley_zeeman_splitting_left + spin_zeeman_splitting_left,  # LUp+
+         (1, 1): - kane_mele_splitting + valley_zeeman_splitting_left - spin_zeeman_splitting_left,  # LDown+
+         (2, 2): - kane_mele_splitting - valley_zeeman_splitting_left + spin_zeeman_splitting_left,  # LUp-
+         (3, 3): kane_mele_splitting - valley_zeeman_splitting_left - spin_zeeman_splitting_left,  # LDown-
+         (4, 4): Ei + kane_mele_splitting + valley_zeeman_splitting_right + spin_zeeman_splitting_right, # RUp+
+         (5, 5): Ei - kane_mele_splitting + valley_zeeman_splitting_right - spin_zeeman_splitting_right, # RDown+
+         (6, 6): Ei - kane_mele_splitting - valley_zeeman_splitting_right + spin_zeeman_splitting_right, # RUp-
+         (7, 7): Ei + kane_mele_splitting - valley_zeeman_splitting_right - spin_zeeman_splitting_right, # RDown-
+         (0, 1): spin_parallel_splitting_left,
+         (2, 3): spin_parallel_splitting_left,
+         (4, 5): spin_parallel_splitting_right,
+         (6, 7): spin_parallel_splitting_right,
          (0, 2): DeltaKK,
          (1, 3): DeltaKK,
          (4, 6): DeltaKK,
@@ -282,6 +288,12 @@ class Knothe2024():
                 V[(r, l, r, l)] = X
 
         return V
+    
+    def call_basis_creators(self):
+        self.create_orbital_symmetry_basis()
+        self.create_singlet_triplet_basis()
+        self.create_spin_symmetry_basis()
+        self.create_valley_symmetry_basis()
     
 
     def create_singlet_triplet_basis(self):
@@ -411,9 +423,22 @@ class Knothe2024():
             list_of_vectors.append(self.FSU.create_normalized_vector(activation))
 
 
+        correspondence = self.singlet_triplet_correspondence
+
+        for i, vec1 in enumerate(list_of_vectors):
+            for j, vec2 in enumerate(list_of_vectors):
+                overlap = np.vdot(vec1, vec2)
+                if i < j and np.abs(overlap) > 1e-6:
+                    print(f"No ortogonality between vectors {correspondence[i]} y {correspondence[j]}  in singlet-triplet basis: ⟨{correspondence[i]}|{correspondence[j]}⟩ = {overlap}")
+
+        for i, vec in enumerate(list_of_vectors):
+            norm = np.linalg.norm(vec)
+            if not np.isclose(norm, 1.0, atol=1e-10):
+                print(f"Vector {correspondence[i]}  in singlet-triplet basis is not normalized: ||vec|| = {norm}")
+
         self.singlet_triplet_basis = list_of_vectors
 
-    def create_Knothe_basis(self):
+    def create_orbital_symmetry_basis(self):
         """
         There are 16 basis elements:
         - 10 for antysimmetric orbital part
@@ -466,7 +491,7 @@ class Knothe2024():
              self.FSU.create_state_from_occupied_orbitals([1,2]): self.a2,
              self.FSU.create_state_from_occupied_orbitals([0,3]): -self.b*self.a2,
              self.FSU.create_state_from_occupied_orbitals([5,6]): self.a2,
-             self.FSU.create_state_from_occupied_orbitals([4,7]): -self.b*self.a2} #S1
+             self.FSU.create_state_from_occupied_orbitals([4,7]): -self.b*self.a2} #S6
         ]
 
         for activation in list_of_activations:
@@ -477,9 +502,9 @@ class Knothe2024():
         # orbital antisymmetric configurations
         list_of_activations = [
             {self.FSU.create_state_from_occupied_orbitals([0,7]): +1,
-            self.FSU.create_state_from_occupied_orbitals([3,4]): +1}, 
+            self.FSU.create_state_from_occupied_orbitals([3,4]): +1}, #AS1
 
-            {self.FSU.create_state_from_occupied_orbitals([3,7]): +1}, 
+            {self.FSU.create_state_from_occupied_orbitals([3,7]): +1}, #AS2
 
             {self.FSU.create_state_from_occupied_orbitals([0,4]): +1},  
 
@@ -506,33 +531,266 @@ class Knothe2024():
         for activation in list_of_activations:
             list_of_vectors.append(self.FSU.create_normalized_vector(activation))
 
-        self.knothe_basis = list_of_vectors
+
+        correspondence = self.symmetric_antisymmetric_correspondence
+
+        for i, vec1 in enumerate(list_of_vectors.copy()):
+            for j, vec2 in enumerate(list_of_vectors.copy()):
+                overlap = np.vdot(vec1, vec2)
+                if i < j and np.abs(overlap) > 1e-6:
+                    print(f"No ortogonality between vectors {correspondence[i]} y {correspondence[j]}  in orbital basis: ⟨{correspondence[i]}|{correspondence[j]}⟩ = {overlap}")
+
+        for i, vec in enumerate(list_of_vectors.copy()):
+            norm = np.linalg.norm(vec)
+            if not np.isclose(norm, 1.0, atol=1e-10):
+                print(f"Vector {correspondence[i]}  in orbital basis is not normalized: ||vec|| = {norm}")
+
+        self.orbital_symmetry_basis = list_of_vectors
+
+
+    def create_spin_symmetry_basis(self):
+        """
+        There are 16 basis elements:
+        - 10 for antysimmetric spin part
+        - 6 for symmetric spin part
+        
+        This method takes the basis expressed as integers numbers which represents bit determinants exprresing c_i^dag c_j^dag |0>
+        with i,j in 1,..,8 as in orbital_labels and the returns 16 vectors as coeficients expressed in this basis (28 elements per vector) which forms
+        the symmetic-antisymmetric basis in the spin.
+        """
+
+        self.compute_some_characteristic_properties()
+        list_of_vectors = []
+
+        # spin symmetric configurations
+
+        list_of_activations = [
+            {self.FSU.create_state_from_occupied_orbitals([0,7]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([3,4]): -1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([1,6]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([2,5]): -1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([0,6]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([1,7]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([2,4]): -1.0,
+             self.FSU.create_state_from_occupied_orbitals([3,5]): -1.0}, #S1
+
+             {self.FSU.create_state_from_occupied_orbitals([4,6]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([4,7]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([5,6]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([5,7]): 1.0}, #S2
+
+             {self.FSU.create_state_from_occupied_orbitals([0,2]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([0,3]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([1,2]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([1,3]): 1.0}, #S3
+
+             {self.FSU.create_state_from_occupied_orbitals([0,4]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([0,5]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([1,4]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([1,5]): 1.0}, #S4
+
+             {self.FSU.create_state_from_occupied_orbitals([2,6]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([2,7]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([3,6]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([3,7]): 1.0}, #S5
+
+             {self.FSU.create_state_from_occupied_orbitals([0,7]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([3,4]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([1,6]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([2,5]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([0,6]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([1,7]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([2,4]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([3,5]): 1.0}, #S6
+        ]
+
+        for activation in list_of_activations:
+            list_of_vectors.append(self.FSU.create_normalized_vector(activation))
+
+        list_of_activations.clear()
+
+        # spin antisymmetric configurations
+        list_of_activations = [
+            {self.FSU.create_state_from_occupied_orbitals([0,7]): +1,
+            self.FSU.create_state_from_occupied_orbitals([1,6]): -1}, 
+
+            {self.FSU.create_state_from_occupied_orbitals([6,7]): +1}, 
+
+            {self.FSU.create_state_from_occupied_orbitals([0,1]): +1},  
+
+            {self.FSU.create_state_from_occupied_orbitals([2,7]): +1,
+            self.FSU.create_state_from_occupied_orbitals([3,6]): -1},  
+
+            {self.FSU.create_state_from_occupied_orbitals([0,3]): +1,
+            self.FSU.create_state_from_occupied_orbitals([1,2]): -1}, # AS6
+
+            {self.FSU.create_state_from_occupied_orbitals([4,7]): +1,
+            self.FSU.create_state_from_occupied_orbitals([5,6]): -1},   
+
+            {self.FSU.create_state_from_occupied_orbitals([0,5]): +1,
+            self.FSU.create_state_from_occupied_orbitals([1,4]): -1},   
+
+            {self.FSU.create_state_from_occupied_orbitals([2,5]): +1,
+            self.FSU.create_state_from_occupied_orbitals([3,4]): -1}, 
+
+            {self.FSU.create_state_from_occupied_orbitals([2,3]): +1},  
+
+            {self.FSU.create_state_from_occupied_orbitals([4,5]): +1},  
+        ]
+
+        for activation in list_of_activations:
+            list_of_vectors.append(self.FSU.create_normalized_vector(activation))
+
+
+        correspondence = self.symmetric_antisymmetric_correspondence
+
+        for i, vec1 in enumerate(list_of_vectors.copy()):
+            for j, vec2 in enumerate(list_of_vectors.copy()):
+                overlap = np.vdot(vec1, vec2)
+                if i < j and np.abs(overlap) > 1e-6:
+                    print(f"No ortogonality between vectors {correspondence[i]} y {correspondence[j]} in spin basis: ⟨{correspondence[i]}|{correspondence[j]}⟩ = {overlap}")
+
+        for i, vec in enumerate(list_of_vectors.copy()):
+            norm = np.linalg.norm(vec)
+            if not np.isclose(norm, 1.0, atol=1e-10):
+                print(f"Vector {correspondence[i]}  in spin basis is not normalized: ||vec|| = {norm}")
+
+        self.spin_symmetry_basis = list_of_vectors
+
+
+    def create_valley_symmetry_basis(self):
+        """
+        There are 16 basis elements:
+        - 10 for antysimmetric valley part
+        - 6 for symmetric valley part
+        
+        This method takes the basis expressed as integers numbers which represents bit determinants exprresing c_i^dag c_j^dag |0>
+        with i,j in 1,..,8 as in orbital_labels and the returns 16 vectors as coeficients expressed in this basis (28 elements per vector) which forms
+        the symmetic-antisymmetric basis in the valley dof.
+        """
+
+        self.compute_some_characteristic_properties()
+        list_of_vectors = []
+
+        # spin symmetric configurations
+
+        list_of_activations = [
+            {self.FSU.create_state_from_occupied_orbitals([0,7]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([3,4]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([1,6]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([2,5]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([0,5]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([1,4]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([2,7]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([3,6]): 1.0}, #S1
+
+             {self.FSU.create_state_from_occupied_orbitals([1,5]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([1,7]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([3,5]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([3,7]): 1.0}, #S2
+
+             {self.FSU.create_state_from_occupied_orbitals([0,4]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([2,4]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([0,6]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([2,6]): 1.0}, #S3
+
+             {self.FSU.create_state_from_occupied_orbitals([0,1]): -1.0,
+             self.FSU.create_state_from_occupied_orbitals([1,2]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([0,3]): -1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([2,3]): -1.0}, #S4
+
+             {self.FSU.create_state_from_occupied_orbitals([4,5]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([4,7]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([5,6]): -1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([6,7]): 1.0}, #S5
+
+             {self.FSU.create_state_from_occupied_orbitals([0,7]): -1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([3,4]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([1,6]): 1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([2,5]): -1.0/np.sqrt(2),
+             self.FSU.create_state_from_occupied_orbitals([0,5]): -1.0,
+             self.FSU.create_state_from_occupied_orbitals([2,7]): -1.0,
+             self.FSU.create_state_from_occupied_orbitals([1,4]): 1.0,
+             self.FSU.create_state_from_occupied_orbitals([3,6]): 1.0}, #S6
+        ]
+
+        for activation in list_of_activations:
+            list_of_vectors.append(self.FSU.create_normalized_vector(activation))
+
+        list_of_activations.clear()
+
+        # spin antisymmetric configurations
+        list_of_activations = [
+            {self.FSU.create_state_from_occupied_orbitals([0,7]): +1,
+            self.FSU.create_state_from_occupied_orbitals([2,5]): -1}, 
+
+            {self.FSU.create_state_from_occupied_orbitals([5,7]): +1}, 
+
+            {self.FSU.create_state_from_occupied_orbitals([0,2]): +1},  
+
+            {self.FSU.create_state_from_occupied_orbitals([4,7]): +1,
+            self.FSU.create_state_from_occupied_orbitals([5,6]): +1},  
+
+            {self.FSU.create_state_from_occupied_orbitals([2,4]): -1,
+            self.FSU.create_state_from_occupied_orbitals([0,6]): 1}, 
+
+            {self.FSU.create_state_from_occupied_orbitals([3,5]): -1,
+            self.FSU.create_state_from_occupied_orbitals([1,7]): 1}, # AS6
+
+            {self.FSU.create_state_from_occupied_orbitals([0,3]): +1,
+            self.FSU.create_state_from_occupied_orbitals([1,2]): 1},   
+
+            {self.FSU.create_state_from_occupied_orbitals([1,6]): +1,
+            self.FSU.create_state_from_occupied_orbitals([3,4]): -1},   
+
+            {self.FSU.create_state_from_occupied_orbitals([4,6]): +1},  
+
+            {self.FSU.create_state_from_occupied_orbitals([1,3]): +1},  
+        ]
+
+        for activation in list_of_activations:
+            list_of_vectors.append(self.FSU.create_normalized_vector(activation))
+
+        correspondence = self.symmetric_antisymmetric_correspondence
+
+        for i, vec1 in enumerate(list_of_vectors):
+            for j, vec2 in enumerate(list_of_vectors):
+                overlap = np.vdot(vec1, vec2)
+                if i < j and np.abs(overlap) > 1e-6:
+                    print(f"No ortogonality between vectors {correspondence[i]} y {correspondence[j]}  in valley basis: ⟨{correspondence[i]}|{correspondence[j]}⟩ = {overlap}")
+
+        for i, vec in enumerate(list_of_vectors):
+            norm = np.linalg.norm(vec)
+            if not np.isclose(norm, 1.0, atol=1e-10):
+                print(f"Vector {correspondence[i]}  in valley basis is not normalized: ||vec|| = {norm}")
+
+        self.valley_symmetry_basis = list_of_vectors
 
     def calculate_eigenvalues_and_eigenvectors(self, parameters_to_change=None):
-        """
-        Calculates the eigenvalues and eigenvectors of the many-body Hamiltonian for the double quantum dot system.
+        Hmatrix = self.obtain_hamiltonian_determinant_basis(parameters_to_change=parameters_to_change)
+        eigval, eigv = eigh(Hmatrix)
 
-        Parameters:
-        parameters_to_change : dict, optional
-            A dictionary of parameters to change in the Hamiltonian. If None, the default parameters are used.
+        return eigval, eigv
+    
+    def obtain_hamiltonian_determinant_basis(self, parameters_to_change=None):
 
-        Returns:
-        eigval : ndarray
-            The eigenvalues of the many-body Hamiltonian.
-        eigv : ndarray
-            The eigenvectors of the many-body Hamiltonian.
-        """
         if parameters_to_change is not None:
             self.parameters.update(parameters_to_change)
-
 
         h = self._build_single_particle_dict()
         V = self._build_interaction_dict()
         H = ManyBodyHamiltonian(self.norb, h, V)
         H.build(self.n_elec)
-        eigval, eigv = eigh(H.matrix)
 
-        return eigval, eigv
+        return H.matrix
+    
+    def project_hamiltonian(self, list_of_vectors, parameters_to_change=None):
+        Umatrix = np.vstack(list_of_vectors)
+        assert np.allclose(Umatrix @ Umatrix.conj().T, np.eye(len(list_of_vectors)))
+
+        Hmatrix = self.obtain_hamiltonian_determinant_basis(parameters_to_change=parameters_to_change)
+
+        return Umatrix @ Hmatrix @ Umatrix.conj().T
     
 
     def compute_some_characteristic_properties(self):
@@ -551,5 +809,64 @@ class Knothe2024():
         self.DeltaOrb = - (U0-U1)/ 2.0 + 0.5*np.sqrt((U0-U1)**2 + 16*t**2)
         self.DiffOrb = self.DeltaOrb - J *self.alpha* g_zz
         self.DiffIntraOrb = 4*DeltaSO + 8 * J*self.alpha * g_ortho
-        self.b = self.alpha * g_ortho * J / DeltaSO
+        self.b = self.alpha * g_ortho * J / DeltaSO if abs(DeltaSO) > 1e-5 else 1000
         self.C = np.sqrt(1+self.b**2)
+
+
+    def build_S2_matrix(self):
+        """
+        Construye la matriz S² en la base de dos fermiones.
+        Usa que S² = 3/2 * I + 2 * (s1 · s2)
+        """
+        from itertools import combinations
+        basis = self.FSU.basis
+        nStates = len(basis)
+        S2 = (3 / 2) * np.eye(nStates)
+
+        # Diccionario para obtener Sz a partir del label
+        szOrbital = {}
+        for i in range(len(self.orbital_labels)):
+            label = self.orbital_labels[i]
+            szOrbital[i] = 0.5 if 'Up' in label else -0.5
+
+        for idx, state in enumerate(basis):
+            occupied = self.FSU.get_occupied_orbitals(state)
+            a, b = occupied  # solo hay dos partículas
+
+            # Parte diagonal: s1·s2 = sz1 * sz2
+            sz1 = szOrbital[a]
+            sz2 = szOrbital[b]
+            S2[idx, idx] += 2 * sz1 * sz2  # porque ya incluimos 3/2 * I
+
+            # Parte off-diagonal: intercambio de spins
+            labelA = self.orbital_labels[a]
+            labelB = self.orbital_labels[b]
+
+            if labelA[0] == labelB[0] and labelA[-1] == labelB[-1] and ('Up' in labelA) != ('Up' in labelB):
+                # flips: solo si a y b tienen el mismo dot/valley
+                flippedA = a ^ 0b10
+                flippedB = b ^ 0b10
+
+                if flippedA != flippedB and flippedA < self.norb and flippedB < self.norb:
+                    newOcc = sorted([flippedA, flippedB])
+                    newState = (1 << newOcc[0]) | (1 << newOcc[1])
+
+                    if newState in basis:
+                        newIdx = basis.index(newState)
+                        S2[idx, newIdx] += 1.0  # contribución del término s+ s- + s- s+
+
+        # Simetriza la matriz
+        S2 = 0.5 * (S2 + S2.T)
+
+        return S2
+
+
+    
+
+    def obtain_total_spin(self, state: np.ndarray):
+        S2 = self.build_S2_matrix()
+        return np.real(np.vdot(state, S2 @ state))  # <psi|S²|psi>
+
+
+
+        

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import itertools
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh
@@ -10,7 +10,7 @@ import numpy as np
 OneBodyDict = Dict[Tuple[int, int], complex]
 TwoBodyDict = Dict[Tuple[int, int, int, int], complex]
 
-from FockSpaceUtilities import FockSpaceUtilities, BitDet
+from .FockSpaceUtilities import FockSpaceUtilities
 
 class ManyBodyHamiltonian:
     """
