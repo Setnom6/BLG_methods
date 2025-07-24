@@ -4,6 +4,7 @@ import numpy as np
 import os
 from datetime import datetime
 from matplotlib.colors import LogNorm
+from scipy.linalg import eigh
 
 from enum import Enum
 
@@ -14,6 +15,9 @@ class ScatterColorOptions(Enum):
     SPIN_SYMMETRY = 'Spin Symmetry'
     VALLEY_SYMMETRY = 'Valley Symmetry'
     TOTAL_SPIN = 'Total Spin'
+    TOTAL_VALLEY = 'Total Valley'
+    TOTAL_DOT = 'Total Dot'
+    ORIGINAL = 'Fock basis'
 
 class BasisToProject(Enum):
     SINGLET_TRIPLET_BASIS = 'Singlet Triplet Basis symmetry'
@@ -30,7 +34,7 @@ def plot_energy_levels(number_of_eigenstates: int, fixed_parameters: dict, param
     colors = np.zeros((len(array_to_plot), number_of_eigenstates))
 
     for i, value in enumerate(array_to_plot):
-        parameters_to_change = obtain_dict_parameters_to_chnange(fixed_parameters, parameter_to_iter, value)
+        parameters_to_change = obtain_dict_parameters_to_change(fixed_parameters, parameter_to_iter, value)
         eigval, eigv = dqd.calculate_eigenvalues_and_eigenvectors(parameters_to_change=parameters_to_change)
         
         eigvals[i] = eigval[:number_of_eigenstates].real 
@@ -74,8 +78,119 @@ def plot_energy_levels(number_of_eigenstates: int, fixed_parameters: dict, param
 
 
 
+def plot_energy_levels_in_projected_subspace(number_of_eigenstates: int, fixed_parameters: dict, parameter_to_iter: DQDParameters, array_to_plot: np.ndarray, basis_to_project: BasisToProject):
+    dqd = DQD_2particles_1orbital(fixed_parameters)
 
-def obtain_dict_parameters_to_chnange(fixed_parameters: dict, parameter_to_iter: DQDParameters, value: float):
+    vectors_list = []
+    scatter_color_option = None
+    correspondence = None
+    if basis_to_project == BasisToProject.ORBITAL_SYMMETRY:
+        vectors_list = dqd.orbital_symmetry_basis
+        correspondence = dqd.symmetric_antisymmetric_correspondence
+    elif basis_to_project == BasisToProject.SPIN_SYMMETRY:
+        vectors_list = dqd.spin_symmetry_basis
+        scatter_color_option = ScatterColorOptions.SPIN_SYMMETRY
+        correspondence = dqd.symmetric_antisymmetric_correspondence
+    elif basis_to_project == BasisToProject.VALLEY_SYMMETRY:
+        vectors_list = dqd.valley_symmetry_basis
+        scatter_color_option = ScatterColorOptions.VALLEY_SYMMETRY
+        correspondence = dqd.symmetric_antisymmetric_correspondence
+    elif basis_to_project == BasisToProject.SINGLET_TRIPLET_BASIS:
+        vectors_list = dqd.singlet_triplet_basis
+        scatter_color_option = ScatterColorOptions.SINGLET_TRIPLET_BASIS
+        correspondence = dqd.singlet_triplet_correspondence
+    else:
+        vectors_list = dqd.original_basis
+        scatter_color_option = ScatterColorOptions.ORIGINAL
+        correspondence = dqd.original_correspondence
+
+    if number_of_eigenstates > len(vectors_list):
+        number_of_eigenstates = len(vectors_list)
+
+    eigvals = np.zeros((len(array_to_plot), number_of_eigenstates))
+    color_data = [[{'color': 0, 'intensity': 0.0} for _ in range(number_of_eigenstates)] for _ in range(len(array_to_plot))]
+
+    for i, value in enumerate(array_to_plot):
+        parameters_to_change = obtain_dict_parameters_to_change(fixed_parameters, parameter_to_iter, value)
+        projectedH = dqd.project_hamiltonian(vectors_list, parameters_to_change=parameters_to_change)
+        eigval, eigv = eigh(projectedH)
+        eigvals[i] = eigval[:number_of_eigenstates].real 
+
+        if scatter_color_option is not None:
+            for j in range(number_of_eigenstates):
+                color_data[i][j] = obtain_colors_to_plot_in_projection(dqd, correspondence, eigv[:, j])
+
+
+    # Define 16-color palette
+    from matplotlib.cm import get_cmap
+    base_cmap = get_cmap('tab20')
+    color_palette = [base_cmap(i / 20) for i in range(16)]
+
+    # Figura principal
+    fig, ax = plt.subplots(figsize=(10, 6))
+    unique_colors_used = {}
+
+    for j in range(number_of_eigenstates):
+        x = []
+        y = []
+        c = []
+        for i in range(len(array_to_plot)):
+            x.append(array_to_plot[i])
+            val = eigvals[i, j] - array_to_plot[i] if parameter_to_iter == DQDParameters.E_I else eigvals[i, j]
+            y.append(val)
+
+            color_idx = color_data[i][j]['color']
+            intensity = color_data[i][j]['intensity']
+            if intensity < 0.0:
+                intensity = 0.0
+            if intensity > 1.0:
+                intensity = 1.0
+            base_color = color_palette[color_idx % 16]
+            rgba = (
+                base_color[0],
+                base_color[1],
+                base_color[2],
+                1.0
+            )
+            c.append(rgba)
+
+            if color_idx not in unique_colors_used and correspondence is not None:
+                unique_colors_used[color_idx] = rgba
+
+        ax.scatter(x, y, color=c, s=1)
+
+    # Etiquetas y título
+    labels_dict = obtain_dict_labels(parameter_to_iter, scatter_color_option)
+    ax.set_xlabel(labels_dict["x_axis"])
+    ax.set_ylabel(labels_dict["y axis"])
+    ax.set_title(labels_dict["title"])
+    ax.grid(True)
+
+    # Leyenda fuera del gráfico
+    if correspondence is not None and len(unique_colors_used) > 0:
+        from matplotlib.patches import Patch
+        handles = []
+        for color_idx, rgba in sorted(unique_colors_used.items()):
+            label = correspondence.get(color_idx, f"ID {color_idx}")
+            handles.append(Patch(facecolor=rgba, edgecolor='black', label=label))
+
+        ax.legend(
+            handles=handles,
+            loc='center left',
+            bbox_to_anchor=(1.02, 0.5),
+            title='State similarity',
+            frameon=False
+        )
+
+    plt.tight_layout()
+    save_figure_and_parameters(fixed_parameters, f"energy_plot_projected_{basis_to_project.name}")
+    save_data_as_npz(fixed_parameters, parameter_to_iter, array_to_plot, eigvals, labels_dict, color_data)
+    plt.show()
+
+
+
+
+def obtain_dict_parameters_to_change(fixed_parameters: dict, parameter_to_iter: DQDParameters, value: float):
     new_dict = fixed_parameters.copy()
 
     if parameter_to_iter == DQDParameters.B_FIELD:
@@ -115,10 +230,25 @@ def obtain_colors_to_plot(dqd: DQD_2particles_1orbital, scatter_color_option: Sc
         return singlet_triplet_symmetry_color(eigenstate)
     
     elif scatter_color_option == ScatterColorOptions.TOTAL_SPIN:
-        return total_spin_color(dqd, eigenstate)
+        return total_dof_color(dqd, "spin", eigenstate)
+    
+    elif scatter_color_option == ScatterColorOptions.TOTAL_VALLEY:
+        return total_dof_color(dqd, "valley", eigenstate)
+    
+    elif scatter_color_option == ScatterColorOptions.TOTAL_DOT:
+        return total_dof_color(dqd, "dot", eigenstate)
     
     else:
         return None
+
+def obtain_colors_to_plot_in_projection(dqd: DQD_2particles_1orbital, correspondence: dict, eigenstate: np.ndarray):
+    lenBasis = len(eigenstate)
+    inv_correspondence = {v: k for k, v in correspondence.items()}
+    preferred_basis = []
+    for i in range(lenBasis):
+        preferred_basis.append(np.array([0]*i+[1]*1+[0]*(lenBasis-i-1)))
+    classification = dqd.FSU.classify_eigenstate(preferred_basis,correspondence, eigenstate)
+    return {'color': inv_correspondence[classification['most_similar_state']], 'intensity': classification['probability']}
 
 
 
@@ -167,11 +297,12 @@ def singlet_triplet_symmetry_color(eigenvector: np.ndarray):
     return (weightAS - weightS) / total
 
 
-def total_spin_color(dqd: DQD_2particles_1orbital, state: np.ndarray):
+def total_dof_color(dqd: DQD_2particles_1orbital, dof: str, state: np.ndarray):
     """
     We identify <S2>=1 (singlet) with value +1 red and <S2>=2 (triplet) with value -1 blue
     """
-    total_spin = dqd.obtain_total_spin(state)
+    S2 = dqd.buildS2Matrix(dof)
+    total_spin = dqd.expectationValue(S2, state)
     total_spin = total_spin*2-3
     return -total_spin
 
@@ -193,7 +324,9 @@ def obtain_dict_labels(parameter_to_iter: DQDParameters, scatter_color_option: S
     if scatter_color_option is not None:
         dict_labels["colorbar"] = f'{scatter_color_option.value}: blue (S) to red (AS)'
         dict_labels["title"] = "Energy levels colored by symmetry classification"
-        if scatter_color_option == ScatterColorOptions.TOTAL_SPIN:
+        if ((scatter_color_option == ScatterColorOptions.TOTAL_SPIN) or
+        (scatter_color_option == ScatterColorOptions.TOTAL_VALLEY) or 
+        (scatter_color_option == ScatterColorOptions.TOTAL_DOT)):
             dict_labels["colorbar"] = f'{scatter_color_option.value}: blue (triplet) to red (singlet)'
 
     return dict_labels
@@ -375,7 +508,7 @@ def hamiltonian_heatmap(fixed_parameters: dict, basis_to_project: BasisToProject
     plt.show()
 
 
-def plot_hamiltonian_charge_configuration_blocks(absH: np.ndarray, title: str = "Hamiltonian divided by charge configuration", colormap: str = "viridis"):
+def plot_hamiltonian_charge_configuration_blocks(absH: np.ndarray, title: str = "Hamiltonian divided by charge configuration", colormap: str = "viridis", alternative_blocks = None):
     """
     Visualizes the projected Hamiltonian by showing the blocks corresponding to each charge sector
     using a logarithmic color scale.
@@ -394,11 +527,16 @@ def plot_hamiltonian_charge_configuration_blocks(absH: np.ndarray, title: str = 
         im = ax.imshow(absH, cmap=colormap, norm=LogNorm(vmin=min_val, vmax=np.max(absH)))
 
     # Add separations for charge sectors
-    sectorSizes = {
+
+    if alternative_blocks is None:
+        sectorSizes = {
         '(2,0)': 6,
         '(1,1)': 16,
         '(0,2)': 6
-    }
+        }
+
+    else:
+        sectorSizes = alternative_blocks
 
     # Block boundaries
     boundaries = np.cumsum(list(sectorSizes.values()))
@@ -422,6 +560,44 @@ def plot_hamiltonian_charge_configuration_blocks(absH: np.ndarray, title: str = 
     fig.colorbar(im, ax=ax, label='log(|HProj|)')
     plt.tight_layout()
 
+def plot_hamiltonian_separated_blocks(absH, blocks_dict, title = "Hamiltonian", colormap= 'viridis'):
+    fig, ax = plt.subplots(figsize=(8, 8))
+    
+    if np.any(absH < 0.0):
+        im = ax.imshow(absH, cmap=colormap)
+
+    else:
+        # Set a floor value of 1e-5 for the logarithmic scale
+        min_val = 1e-5
+        absH[absH < min_val] = min_val  # Replace values smaller than 1e-5 with 1e-5
+        
+        # Create the image with logarithmic scale
+        im = ax.imshow(absH, cmap=colormap, norm=LogNorm(vmin=min_val, vmax=np.max(absH)))
+
+    # Add separations for charge sectors
+    sectorSizes = blocks_dict
+
+    # Block boundaries
+    boundaries = np.cumsum(list(sectorSizes.values()))
+    
+    for pos in boundaries[:-1]:  # avoid final line out of range
+        ax.axhline(pos - 0.5, color='white', linewidth=1.5)
+        ax.axvline(pos - 0.5, color='white', linewidth=1.5)
+
+    # Block labels
+    middle = lambda start, size: start + size / 2 - 0.5
+    starts = np.cumsum([0] + list(sectorSizes.values())[:-1])
+    labels = list(sectorSizes.keys())
+    
+    for i, (start, size, label) in enumerate(zip(starts, sectorSizes.values(), labels)):
+        ax.text(middle(start, size), -3, label, ha='center', va='bottom', fontsize=10, color='white', rotation=90)
+        ax.text(-3, middle(start, size), label, va='center', ha='right', fontsize=10, color='white')
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_title(title)
+    fig.colorbar(im, ax=ax, label='log(|HProj|)')
+    plt.tight_layout()
 
 def plot_hamiltonian_no_blocks(absH: np.ndarray, title: str = "Hamiltonian", colormap: str = "viridis"):
     """

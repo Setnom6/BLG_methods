@@ -1,5 +1,5 @@
-- [ ] Measure total spin or total vally dof of each state. Revise the definition of S2 in the methods, suposely T0 should give 2 instead of 1
-- [ ] Chekc how are seen the states if we project onto symmetric and antisymmetric 16 elements basis
+- [ ] Add coloring to projected representations
+- [ ] Improve visualization of details in graphs
 - [ ] Identify the mask necessary for pymablock
 - [ ] Undestand how to use pymablock (or another) to restrict ourselves to a subspace
 - [ ] Try to figure out how to define singlet-Triplet or S-AS basis in the two orbitals case (16 single-particle states)

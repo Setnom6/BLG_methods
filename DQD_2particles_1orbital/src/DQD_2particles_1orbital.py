@@ -49,6 +49,7 @@ class DQD_2particles_1orbital():
         H.generate_basis(self.n_elec)
         self.FSU = H.FSUtils
 
+        self._initialize_original_dict()
         self.call_basis_creators()
 
 
@@ -89,6 +90,7 @@ class DQD_2particles_1orbital():
             7: 'RDown-'
         }
         self.labels_to_indices = {v: k for k, v in self.orbital_labels.items()}
+
         self.singlet_triplet_correspondence = {
             0: 'LL,S,T0', # Dot, Spin, Valley
             1: 'LL,S,T+', # First 6 are (2,0)
@@ -117,7 +119,7 @@ class DQD_2particles_1orbital():
             24: 'RR,S,T-',
             25: 'RR,T0,S',
             26: 'RR,T+,S',
-            27: 'RR,T+,S',
+            27: 'RR,T-,S',
         }
 
         self.symmetric_antisymmetric_correspondence = {
@@ -138,6 +140,13 @@ class DQD_2particles_1orbital():
             14: 'AS9',
             15: 'AS10',
         }
+
+    def _initialize_original_dict(self):
+        self.original_correspondence = {}
+        for i, state in enumerate(self.FSU.basis):
+            a,b = self.FSU.get_occupied_orbitals(state)
+            self.original_correspondence[i] = f"|{self.orbital_labels[a]};{self.orbital_labels[b]}>"
+
 
     def _build_single_particle_dict(self):
         """
@@ -290,10 +299,18 @@ class DQD_2particles_1orbital():
         return V
     
     def call_basis_creators(self):
+        self.create_original_basis()
         self.create_orbital_symmetry_basis()
         self.create_singlet_triplet_basis()
         self.create_spin_symmetry_basis()
         self.create_valley_symmetry_basis()
+
+    def create_original_basis(self):
+        vector_basis = []
+        for i in range(len(self.FSU.basis)):
+            vector_basis.append(np.array([0]*i+[1]*1+[0]*(len(self.FSU.basis)-i-1)))
+
+        self.original_basis = vector_basis
     
 
     def create_singlet_triplet_basis(self):
@@ -785,12 +802,79 @@ class DQD_2particles_1orbital():
         return H.matrix
     
     def project_hamiltonian(self, list_of_vectors, parameters_to_change=None):
-        Umatrix = np.vstack(list_of_vectors)
-        assert np.allclose(Umatrix @ Umatrix.conj().T, np.eye(len(list_of_vectors)))
+        Umatrix = np.array(list_of_vectors).T  # shape: (dimFull, nProj)
+        assert np.allclose(Umatrix.conj().T @ Umatrix, np.eye(Umatrix.shape[1]))
 
         Hmatrix = self.obtain_hamiltonian_determinant_basis(parameters_to_change=parameters_to_change)
 
-        return Umatrix @ Hmatrix @ Umatrix.conj().T
+        return Umatrix.conj().T @ Hmatrix @ Umatrix
+
+    
+
+    def diagnoseProjectionQuality(self, listOfVectors, parametersToChange=None, fidelityThreshold=0.98, energyTolerance=1e-3, verbose=True):
+        """
+        Evaluate whether projecting the Hamiltonian onto a reduced basis is a good approximation.
+
+        Parameters:
+        - listOfVectors: list or array of orthonormal vectors defining the projected subspace (shape: nProj × dimFull)
+        - parametersToChange: optional dictionary of parameters to update before building the Hamiltonian
+        - fidelityThreshold: minimum fidelity required to consider the projection valid
+        - energyTolerance: maximum acceptable deviation in energy between full and projected spectra
+        - verbose: whether to print per-state fidelities and energy differences
+
+        Returns:
+        - Dictionary with fidelity list, energy differences, and flags indicating quality
+        """
+
+        # Get the full Hamiltonian in determinant basis
+        Hfull = self.obtain_hamiltonian_determinant_basis(parameters_to_change=parametersToChange)
+        eigvalsFull, eigvecsFull = np.linalg.eigh(Hfull)
+
+        # Projection matrix P with orthonormal rows
+        P = np.array(listOfVectors).T  # shape: (dimFull, nProj)
+        assert np.allclose(P.conj().T @ P, np.eye(P.shape[1])), "Projected basis is not orthonormal"
+
+
+        # Projected Hamiltonian
+        Hproj = P.conj().T @ Hfull @ P
+        eigvalsProj, eigvecsProj = np.linalg.eigh(Hproj)
+
+        nProj = len(listOfVectors)
+        fidelityList = []
+        energyDiffList = []
+
+        for i in range(nProj):
+            psiFull = eigvecsFull[:, i]
+            psiProj = P @ (P.conj().T @ psiFull)
+            fidelity = np.abs(np.vdot(psiFull, psiProj))**2
+            deltaE = np.abs(eigvalsFull[i] - eigvalsProj[i])
+            fidelityList.append(fidelity)
+            energyDiffList.append(deltaE)
+
+            if verbose:
+                print(f"State {i}: Fidelity = {fidelity:.6f}, ΔE = {deltaE:.6e}")
+
+        # Global diagnosis
+        fidelitiesOk = all(f > fidelityThreshold for f in fidelityList)
+        energiesOk = all(dE < energyTolerance for dE in energyDiffList)
+
+        print("\nProjection diagnostic:")
+        if fidelitiesOk and energiesOk:
+            print("Projection is safe: high fidelities and accurate spectrum reproduction.")
+        elif not fidelitiesOk and energiesOk:
+            print("Warning: low fidelities despite accurate energies. Projection may miss state components.")
+        elif fidelitiesOk and not energiesOk:
+            print("Warning: high fidelities but energy mismatch. Possible degeneracies or level mixing.")
+        else:
+            print("Projection is not reliable: significant loss of information.")
+
+        return {
+            "fidelities": fidelityList,
+            "energyDiffs": energyDiffList,
+            "fidelitiesOk": fidelitiesOk,
+            "energiesOk": energiesOk
+        }
+
     
 
     def compute_some_characteristic_properties(self):
@@ -800,6 +884,8 @@ class DQD_2particles_1orbital():
         J = self.parameters[DQDParameters.J.value]
         g_ortho = self.parameters[DQDParameters.G_ORTHO.value]
         g_zz = self.parameters[DQDParameters.G_ZZ.value]
+        g_z0 = self.parameters[DQDParameters.G_Z0.value]
+        g_0z = self.parameters[DQDParameters.G_0Z.value]
         DeltaSO = self.parameters[DQDParameters.DELTA_SO.value]
 
 
@@ -811,61 +897,87 @@ class DQD_2particles_1orbital():
         self.DiffIntraOrb = 4*DeltaSO + 8 * J*self.alpha * g_ortho
         self.b = self.alpha * g_ortho * J / DeltaSO if abs(DeltaSO) > 1e-5 else 1000
         self.C = np.sqrt(1+self.b**2)
+        self.Jeff = self.DeltaOrb - self.alpha * 2* J *(g_z0 + g_0z + 0.5*g_zz)
 
 
-    def build_S2_matrix(self):
-        """
-        Construye la matriz S² en la base de dos fermiones.
-        Usa que S² = 3/2 * I + 2 * (s1 · s2)
-        """
-        from itertools import combinations
-        basis = self.FSU.basis
-        nStates = len(basis)
-        S2 = (3 / 2) * np.eye(nStates)
+    def buildSzMatrix(self, dof: str) -> np.ndarray:
+        dof_patterns = {
+            "spin": {'Up': 0.5, 'Down': -0.5},
+            "valley": {'+': 0.5, '-': -0.5},
+            "dot": {'L': 0.5, 'R': -0.5}
+        }
+        
+        if dof not in dof_patterns:
+            raise ValueError("The only dof allowed are 'spin', 'valley' or 'dot'")
+        
+        dim = len(self.FSU.basis)
+        szMatrix = np.zeros((dim, dim))
+        patterns = dof_patterns[dof]
+        
+        for i, det in enumerate(self.FSU.basis):
+            occupied = self.FSU.get_occupied_orbitals(det)
+            sz = 0.0
+            for orb in occupied:
+                label = self.orbital_labels[orb]
+                for pattern, value in patterns.items():
+                    if pattern in label:
+                        sz += value
+                        break
+            szMatrix[i, i] = sz
+        
+        return szMatrix
 
-        # Diccionario para obtener Sz a partir del label
-        szOrbital = {}
-        for i in range(len(self.orbital_labels)):
-            label = self.orbital_labels[i]
-            szOrbital[i] = 0.5 if 'Up' in label else -0.5
+    def buildSpinLadderMatrix(self, ladderType: str, dof: str) -> np.ndarray:
+        dof_patterns = {
+            "spin": ('Down', 'Up'),
+            "valley": ('-', '+'),
+            "dot": ('R', 'L')
+        }
+        
+        if dof not in dof_patterns:
+            raise ValueError("The only dof allowed are 'spin', 'valley' or 'dot'")
+        if ladderType not in ('plus', 'minus'):
+            raise ValueError("ladderType must be 'plus' or 'minus'")
+        
+        dim = len(self.FSU.basis)
+        matrix = np.zeros((dim, dim))
+        old_pattern, new_pattern = dof_patterns[dof]
+        
+        for i, det in enumerate(self.FSU.basis):
+            for orb in range(self.norb):
+                label = self.orbital_labels[orb]
+                if old_pattern in label:
+                    partnerLabel = label.replace(old_pattern, new_pattern)
+                    partnerOrb = next((j for j, lbl in self.orbital_labels.items() 
+                                    if lbl == partnerLabel), None)
+                    if partnerOrb is None:
+                        continue
 
-        for idx, state in enumerate(basis):
-            occupied = self.FSU.get_occupied_orbitals(state)
-            a, b = occupied  # solo hay dos partículas
+                    annihilateOrb, createOrb = (orb, partnerOrb) if ladderType == 'plus' else (partnerOrb, orb)
 
-            # Parte diagonal: s1·s2 = sz1 * sz2
-            sz1 = szOrbital[a]
-            sz2 = szOrbital[b]
-            S2[idx, idx] += 2 * sz1 * sz2  # porque ya incluimos 3/2 * I
-
-            # Parte off-diagonal: intercambio de spins
-            labelA = self.orbital_labels[a]
-            labelB = self.orbital_labels[b]
-
-            if labelA[0] == labelB[0] and labelA[-1] == labelB[-1] and ('Up' in labelA) != ('Up' in labelB):
-                # flips: solo si a y b tienen el mismo dot/valley
-                flippedA = a ^ 0b10
-                flippedB = b ^ 0b10
-
-                if flippedA != flippedB and flippedA < self.norb and flippedB < self.norb:
-                    newOcc = sorted([flippedA, flippedB])
-                    newState = (1 << newOcc[0]) | (1 << newOcc[1])
-
-                    if newState in basis:
-                        newIdx = basis.index(newState)
-                        S2[idx, newIdx] += 1.0  # contribución del término s+ s- + s- s+
-
-        # Simetriza la matriz
-        S2 = 0.5 * (S2 + S2.T)
-
-        return S2
-
-
+                    newState, phase1 = self.FSU.apply_annihilation(det, annihilateOrb)
+                    if newState is not None:
+                        finalState, phase2 = self.FSU.apply_creation(newState, createOrb)
+                        if finalState is not None and finalState in self.FSU.basis:
+                            j = self.FSU.basis.index(finalState)
+                            matrix[j, i] += phase1 * phase2
+        
+        return matrix
     
 
-    def obtain_total_spin(self, state: np.ndarray):
-        S2 = self.build_S2_matrix()
-        return np.real(np.vdot(state, S2 @ state))  # <psi|S²|psi>
+    def buildS2Matrix(self, dof: str) -> np.ndarray:
+        sz = self.buildSzMatrix(dof)
+        sp = self.buildSpinLadderMatrix('plus', dof)
+        sm = self.buildSpinLadderMatrix('minus', dof)
+        
+        s2 = sz @ sz + 0.5 * (sp @ sm + sm @ sp)
+        return s2
+    
+    def expectationValue(self, operatorMatrix: np.ndarray, stateVector: np.ndarray) -> float:
+        return np.real(np.vdot(stateVector, operatorMatrix @ stateVector))
+
+
+
 
 
 

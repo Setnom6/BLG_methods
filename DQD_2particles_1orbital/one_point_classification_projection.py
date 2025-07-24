@@ -1,14 +1,13 @@
 from src.DQD_2particles_1orbital import DQD_2particles_1orbital, DQDParameters
-
-
+import numpy as np
+from scipy.linalg import eigh
 gOrtho = 1
 U0 = 8.5
-E_i = 2.0
 # Example usage
 fixedParameters = {
         DQDParameters.B_FIELD.value: 0.5,  # Set B-field
         DQDParameters.B_PARALLEL.value: 0.0,  # Set parallel magnetic field to zero
-        DQDParameters.E_I.value: E_i,  # Set detuning to zero
+        DQDParameters.E_I.value: 2.0,  # Set detuning to zero
         DQDParameters.T.value: 0.04,  # Set hopping parameter
         DQDParameters.DELTA_SO.value: 0.06,  # Set Kane
         DQDParameters.DELTA_KK.value: 0.02,  # Set valley mixing
@@ -31,32 +30,27 @@ number_of_eigenstates = 16  # Number of eigenstates to plot
 
 
 dqd = DQD_2particles_1orbital()
+basis_to_project = dqd.original_basis
+correspondence = dqd.original_correspondence
+lenBasis = len(basis_to_project)
+
 parameters_to_change = fixedParameters.copy() if fixedParameters is not None else {}
 parameters_to_change[DQDParameters.B_FIELD.value] = 0.1  # Set a small B-field to avoid degeneracy
-eigval, eigv = dqd.calculate_eigenvalues_and_eigenvectors(fixedParameters)
+projectedH = dqd.project_hamiltonian(basis_to_project, parameters_to_change=parameters_to_change)
 
-basis = dqd.FSU.basis
-
-print([state for state in basis])
-
-dqd.compute_some_characteristic_properties()
-print(f"Delta Orbital = {dqd.DeltaOrb:.5f} meV")
-print(f"Diff Orbital = {dqd.DiffOrb:.5f} meV")
-print(f"Diff Intra Orbital = {dqd.DiffIntraOrb:.5f} meV")
-print(f"a1 = {dqd.a1:.5f}")
-print(f"a2 = {dqd.a2:.5f}")
-print(f"alpha = {dqd.alpha:.5f}")
-print(f"b = {dqd.b:.5f}")
-print(f"C = {dqd.C:.5f}")
-print(f"Jeff = {dqd.Jeff}")
-print("\n")
+dqd.diagnoseProjectionQuality(basis_to_project, parameters_to_change)
+print("-----------------------------\n")
+eigval, eigv = eigh(projectedH)
     
-correspondence = dqd.singlet_triplet_correspondence
-preferred_basis = dqd.singlet_triplet_basis
+
+preferred_basis = []
+for i in range(lenBasis):
+    preferred_basis.append(np.array([0]*i+[1]*1+[0]*(lenBasis-i-1)))
+
 for i in range(number_of_eigenstates):
     classification = dqd.FSU.classify_eigenstate(preferred_basis,correspondence,eigv[:, i])
     print(f"Eigenstate {i+1}:")
-    print(f"Eigenvalue: {eigval[i]-E_i:.4f} meV")
+    print(f"Eigenvalue: {eigval[i]:.4f} meV")
     print(f"Most similar state (Dot, Spin, Valley): {classification['most_similar_state']}")
     print(f"Probability: {classification['probability']:.4f}")
     for i in range(1,4):
