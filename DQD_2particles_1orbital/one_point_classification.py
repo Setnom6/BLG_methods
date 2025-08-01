@@ -51,8 +51,8 @@ print(f"C = {dqd.C:.5f}")
 print(f"Jeff = {dqd.Jeff}")
 print("\n")
     
-correspondence = dqd.singlet_triplet_correspondence
-preferred_basis = dqd.singlet_triplet_basis
+correspondence = dqd.singlet_triplet_in_spin_correspondence
+preferred_basis = dqd.singlet_triplet_in_spin_basis
 for i in range(number_of_eigenstates):
     classification = dqd.FSU.classify_eigenstate(preferred_basis,correspondence,eigv[:, i])
     print(f"Eigenstate {i+1}:")
