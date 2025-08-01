@@ -71,12 +71,10 @@ def simulateCurrentAtTWait(fixedParameters, initialStateLabel, eiValue, totalPoi
     result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=[])
     finalPop = result.states[-1].diag()
 
-    totalPopulation = finalPop[inverseCorrespondence["LL,S,T-"]] + finalPop[inverseCorrespondence["LR,S,T-"]] + finalPop[inverseCorrespondence["LR,T+,T-"]] + finalPop[inverseCorrespondence["LR,T0,T-"]]
-    
     I = (
         finalPop[inverseCorrespondence["LL,S,T-"]]
         + finalPop[inverseCorrespondence["LR,S,T-"]]
-    )/totalPopulation
+    )
 
     return I
 

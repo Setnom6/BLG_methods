@@ -72,12 +72,10 @@ def simulateCurrentAtTWait(fixedParameters, initialStateLabel, bValue, totalPoin
     result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=[])
     finalPop = result.states[-1].diag()
 
-    totalPopulation = finalPop[inverseCorrespondence["LL,S,T-"]] + finalPop[inverseCorrespondence["LR,S,T-"]] + finalPop[inverseCorrespondence["LR,T+,T-"]] + finalPop[inverseCorrespondence["LR,T0,T-"]]
-    
     I = (
         finalPop[inverseCorrespondence["LL,S,T-"]]
         + finalPop[inverseCorrespondence["LR,S,T-"]]
-    )/totalPopulation
+    )
 
     return I
 
@@ -144,5 +142,5 @@ fixedParameters = {
 }
 
 # === EJECUTAR ===
-bValues = np.linspace(0.0, 0.5, 20)  # en meV
+bValues = np.linspace(0.15, 0.3, 10)  # en meV
 runSweepOverTWait(fixedParameters, initialStateLabel="LR,T+,T-", bValueList=bValues)

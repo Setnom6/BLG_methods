@@ -11,7 +11,7 @@ from datetime import datetime
 def runDynamics(fixedParameters, initialStateLabel):
 
     # === Parámetros del protocolo de barrido ===
-    tRamp, tWait, tJump, tWait2 = 0.6, 1.66, 0.6, 0.5  # en ns
+    tRamp, tWait, tJump, tWait2 = 0.6, 1.66, 0.05, 0.5  # en ns
     tTotal = tRamp+tWait+tJump+tWait2
     totalPoints = 500
     nRamp, nWait, nJump, nWait2 = int(tRamp*totalPoints/tTotal), int(tWait*totalPoints/tTotal), int(tJump*totalPoints/tTotal),  int(tWait2*totalPoints/tTotal)  # número de puntos por tramo
@@ -124,7 +124,7 @@ U1 = 0.1
 Ei = 8.25
 fixedParameters = {
     DQDParameters.B_FIELD.value: 0.2,
-    DQDParameters.B_PARALLEL.value: 0.05,
+    DQDParameters.B_PARALLEL.value: 0.165,
     DQDParameters.E_I.value: Ei,
     DQDParameters.T.value: 0.004,
     DQDParameters.DELTA_SO.value: 0.06,
