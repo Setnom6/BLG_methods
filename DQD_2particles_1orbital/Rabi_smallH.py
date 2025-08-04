@@ -23,7 +23,7 @@ def runDynamics(fixedParameters, initialStateLabel, useCollapseOperators=True):
     H10 = H_isolated[N:, :N]
     H11 = H_isolated[N:, N:]
 
-    # SWT effective Hamiltonian
+    # first order effective Hamiltonian
     hEff = H00 - H01 @ inv(H11) @ H10
 
     inverseCorrespondence = {v: k for k, v in correspondence.items()}

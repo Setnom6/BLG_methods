@@ -16,7 +16,7 @@ def simulateCurrentAtTWait(fixedParameters, initialStateLabel, bValue, totalPoin
     basis = dqd.singlet_triplet_reordered_basis
     correspondence = dqd.singlet_triplet_reordered_correspondence
     inverseCorrespondence = {v: k for k, v in correspondence.items()}
-    N = 5  # Tamaño del bloque H00
+    N = 5  # Size of H00 block
 
     tRamp, tWait, tJump, tWait2 = 0.6, 1.66, 0.6, 0.5  # ns
     tTotal = tRamp + tWait + tJump + tWait2
@@ -37,7 +37,7 @@ def simulateCurrentAtTWait(fixedParameters, initialStateLabel, bValue, totalPoin
     eiStart = 0.0
     eiMiddle = 8.25
     eiSharp = 2.0 * 8.5
-    eiFinal = 2.0 * 8.5 # U0=8.5
+    eiFinal = 2.0 * 8.5  # U0 = 8.5
 
     eiValues = np.concatenate([
         np.linspace(eiStart, eiMiddle, nRamp, endpoint=False),
@@ -72,47 +72,48 @@ def simulateCurrentAtTWait(fixedParameters, initialStateLabel, bValue, totalPoin
     result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=[])
     finalPop = result.states[-1].diag()
 
-    I = (
-        finalPop[inverseCorrespondence["LL,S,T-"]]
-        + finalPop[inverseCorrespondence["LR,S,T-"]]
+    current = (
+        finalPop[inverseCorrespondence["LL,S,T-"]] +
+        finalPop[inverseCorrespondence["LR,S,T-"]]
     )
 
-    return I
+    return current
 
 
 def runSweepOverTWait(fixedParameters, initialStateLabel, bValueList, totalPoints=500):
 
     nCores = multiprocessing.cpu_count()
-    print(f"Ejecutando en paralelo con joblib usando {nCores} núcleos...")
+    print(f"Running in parallel with joblib using {nCores} cores...")
 
-    resultsCurrent = Parallel(n_jobs=nCores)(
+    currentResults = Parallel(n_jobs=nCores)(
         delayed(simulateCurrentAtTWait)(fixedParameters, initialStateLabel, bValue, totalPoints)
         for bValue in bValueList
     )
 
-    # === Gráfica corriente vs tiempo de espera ===
+    # === Plot: Current vs bx ===
     plt.figure(figsize=(8, 5))
-    plt.plot(bValueList, resultsCurrent, 'o-', color='crimson')
+    plt.plot(bValueList, currentResults, 'o-', color='crimson')
     plt.xlabel("bx (T)")
     plt.ylabel("Current (normalized)")
     plt.title("Current vs bx")
     plt.grid(True)
 
-    # === Guardar ===
+    # === Save ===
     outputDir = os.path.join(os.getcwd(), "DQD_2particles_1orbital", "figures")
     os.makedirs(outputDir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     figPath = os.path.join(outputDir, f"Current_vs_bx_JOBLIB_{timestamp}.png")
     plt.savefig(figPath)
-    print(f"Figura guardada en: {figPath}")
+    print(f"Figure saved at: {figPath}")
 
     dataPath = os.path.join(outputDir, f"Current_vs_bx_JOBLIB_{timestamp}.txt")
-    np.savetxt(dataPath, np.column_stack((bValueList, resultsCurrent)), header="bValue(T))\tCurrent(normalized)")
-    print(f"Datos guardados en: {dataPath}")
+    np.savetxt(dataPath, np.column_stack((bValueList, currentResults)), header="bValue (T)\tCurrent (normalized)")
+    print(f"Data saved at: {dataPath}")
     plt.show()
 
-# === PARÁMETROS ===
+
+# === PARAMETERS ===
 gOrtho = 10
 U0 = 8.5
 U1 = 0.1
@@ -141,6 +142,6 @@ fixedParameters = {
     DQDParameters.J.value: 0.00075 / gOrtho,
 }
 
-# === EJECUTAR ===
-bValues = np.linspace(0.15, 0.3, 10)  # en meV
+# === EXECUTE ===
+bValues = np.linspace(0.15, 0.3, 10)  # in Tesla
 runSweepOverTWait(fixedParameters, initialStateLabel="LR,T+,T-", bValueList=bValues)

@@ -57,7 +57,7 @@ for ei in eiValues:
     H10 = H_full[N:, :N]
     H11 = H_full[N:, N:]
 
-    # SWT effective Hamiltonian
+    # First order effective Hamiltonian
     hEff = H00 - H01 @ inv(H11) @ H10
 
     # Diagonalizations
@@ -81,23 +81,23 @@ errors_H00 = np.abs(allEigenvalues_full[:, :N] - allEigenvalues_H00[:, :N])
 # Plotting
 fig, axs = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
 
-# 1. SWT vs Full
+# 1. First order vs Full
 for i in range(N):
     axs[0].plot(eiValues, allEigenvalues_full[:, i] - eiValues, 'C' + str(i), label=f'Full {i+1}')
     axs[0].plot(eiValues, allEigenvalues_eff[:, i] - eiValues, 'C' + str(i) + '--', label=f'SW {i+1}')
     axs[0].plot(eiValues, allEigenvalues_H00[:, i] - eiValues, 'C' + str(i) + ':', label=f'H00 {i+1}')
 axs[0].set_ylabel("Energy - $E_I$ (meV)")
-axs[0].set_title("SWT and H00 vs Full Hamiltonian")
+axs[0].set_title("First order and H00 vs Full Hamiltonian")
 axs[0].legend()
 
-# 3. Error SWT vs Full
+# 3. Error First order vs Full
 for i in range(N):
-    axs[1].plot(eiValues, errors_eff[:, i], 'C' + str(i), label=f'Level {i} SWT')
+    axs[1].plot(eiValues, errors_eff[:, i], 'C' + str(i), label=f'Level {i} First order')
     axs[1].plot(eiValues, errors_H00[:, i], 'C' + str(i) + '--', label=f'Level {i} H00')
 axs[1].set_yscale("log")
 axs[1].set_xlabel("$E_I$ (meV)")
 axs[1].set_ylabel("Abs. Error (meV)")
-axs[1].set_title("Error |SW - Full| and |H00 - Full|")
+axs[1].set_title("Error |First order - Full| and |H00 - Full|")
 axs[1].legend()
 
 plt.tight_layout()
@@ -106,11 +106,11 @@ os.makedirs(figures_dir, exist_ok=True)
 
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-fig_path = os.path.join(figures_dir, f"SWT_{timestamp}.png")
+fig_path = os.path.join(figures_dir, f"First order_{timestamp}.png")
 plt.savefig(fig_path)
 print(f"Figure saved in: {fig_path}")
 
-param_path = os.path.join(figures_dir, f"parameters_SWT_{timestamp}.txt")
+param_path = os.path.join(figures_dir, f"parameters_First_order_approx_{timestamp}.txt")
 with open(param_path, 'w') as f:
     for key, value in fixedParameters.items():
         f.write(f"{key}: {value}\n")

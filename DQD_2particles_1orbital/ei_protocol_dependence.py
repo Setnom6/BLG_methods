@@ -16,7 +16,7 @@ def simulateCurrentAtTWait(fixedParameters, initialStateLabel, eiValue, totalPoi
     basis = dqd.singlet_triplet_reordered_basis
     correspondence = dqd.singlet_triplet_reordered_correspondence
     inverseCorrespondence = {v: k for k, v in correspondence.items()}
-    N = 5  # Tamaño del bloque H00
+    N = 5  # Size of H00 block
 
     tRamp, tWait, tJump, tWait2 = 0.6, 1.66, 0.6, 0.5  # ns
     tTotal = tRamp + tWait + tJump + tWait2
@@ -37,7 +37,7 @@ def simulateCurrentAtTWait(fixedParameters, initialStateLabel, eiValue, totalPoi
     eiStart = 0.0
     eiMiddle = eiValue
     eiSharp = 2.0 * 8.5
-    eiFinal = 2.0 * 8.5 # U0=8.5
+    eiFinal = 2.0 * 8.5  # U0 = 8.5
 
     eiValues = np.concatenate([
         np.linspace(eiStart, eiMiddle, nRamp, endpoint=False),
@@ -71,47 +71,48 @@ def simulateCurrentAtTWait(fixedParameters, initialStateLabel, eiValue, totalPoi
     result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=[])
     finalPop = result.states[-1].diag()
 
-    I = (
-        finalPop[inverseCorrespondence["LL,S,T-"]]
-        + finalPop[inverseCorrespondence["LR,S,T-"]]
+    current = (
+        finalPop[inverseCorrespondence["LL,S,T-"]] +
+        finalPop[inverseCorrespondence["LR,S,T-"]]
     )
 
-    return I
+    return current
 
 
 def runSweepOverTWait(fixedParameters, initialStateLabel, eiValueList, totalPoints=500):
 
     nCores = multiprocessing.cpu_count()
-    print(f"Ejecutando en paralelo con joblib usando {nCores} núcleos...")
+    print(f"Running in parallel with joblib using {nCores} cores...")
 
-    resultsCurrent = Parallel(n_jobs=nCores)(
+    currentResults = Parallel(n_jobs=nCores)(
         delayed(simulateCurrentAtTWait)(fixedParameters, initialStateLabel, eiValue, totalPoints)
         for eiValue in eiValueList
     )
 
-    # === Gráfica corriente vs tiempo de espera ===
+    # === Plot: Current vs Detuning ===
     plt.figure(figsize=(8, 5))
-    plt.plot(eiValueList, resultsCurrent, 'o-', color='crimson')
-    plt.xlabel("ei (meV)")
+    plt.plot(eiValueList, currentResults, 'o-', color='crimson')
+    plt.xlabel("Detuning $E_I$ (meV)")
     plt.ylabel("Current (normalized)")
-    plt.title("Current vs ei detuning")
+    plt.title("Current vs Detuning $E_I$")
     plt.grid(True)
 
-    # === Guardar ===
+    # === Save ===
     outputDir = os.path.join(os.getcwd(), "DQD_2particles_1orbital", "figures")
     os.makedirs(outputDir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     figPath = os.path.join(outputDir, f"Current_vs_ei_JOBLIB_{timestamp}.png")
     plt.savefig(figPath)
-    print(f"Figura guardada en: {figPath}")
+    print(f"Figure saved at: {figPath}")
 
     dataPath = os.path.join(outputDir, f"Current_vs_ei_JOBLIB_{timestamp}.txt")
-    np.savetxt(dataPath, np.column_stack((eiValueList, resultsCurrent)), header="eiValue(meV))\tCurrent(normalized)")
-    print(f"Datos guardados en: {dataPath}")
+    np.savetxt(dataPath, np.column_stack((eiValueList, currentResults)), header="eiValue (meV)\tCurrent (normalized)")
+    print(f"Data saved at: {dataPath}")
     plt.show()
 
-# === PARÁMETROS ===
+
+# === PARAMETERS ===
 gOrtho = 10
 U0 = 8.5
 U1 = 0.1
@@ -140,6 +141,6 @@ fixedParameters = {
     DQDParameters.J.value: 0.00075 / gOrtho,
 }
 
-# === EJECUTAR ===
-tWaitValues = np.linspace(8.0, 8.4, 20)  # en meV
-runSweepOverTWait(fixedParameters, initialStateLabel="LR,T+,T-", eiValueList=tWaitValues)
+# === EXECUTE ===
+eiDetuningValues = np.linspace(8.0, 8.4, 20)  # in meV
+runSweepOverTWait(fixedParameters, initialStateLabel="LR,T+,T-", eiValueList=eiDetuningValues)

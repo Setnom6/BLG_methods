@@ -154,29 +154,29 @@ class DQD_2particles_1orbital():
         }
 
         self.singlet_triplet_reordered_correspondence = {
-            0: 'LR,T+,T-', # Four states which remain the lowest eigenvalues for the whole process
-            1: 'LR,S,T-',
+            0: 'LR,T+,T-', # We aislee the states which interact with the first 5 states (when Ei grows positively)
+            1: 'LR,S,T-', 
             2: 'LL,S,T-',
             3: 'LR,T0,T-',
             4: 'LR,T-,T-',
-            5: 'LL,T-,S', # Rest of (2,0) states
-            6: 'LL,T0,S',
-            7: 'LL,T+,S',
-            8: 'LL,S,T0',
-            9: 'LL,S,T+',
-            10: 'LR,S,T0', # Rest of symmetric (1,1) states
-            11: 'LR,S,T+',
-            12: 'LR,T0,S',
-            13: 'LR,T-,S',
-            14: 'LR,T+,S',
-            15: 'LR,S,S', # Rest of antisymmetric (1,1) states
-            16: 'LR,T0,T0',
-            17: 'LR,T0,T+',
-            18: 'LR,T+,T0',
-            19: 'LR,T+,T+',
-            20: 'LR,T-,T0',
-            21: 'LR,T-,T+',
-            22: 'RR,S,T-', # Rest of (0,2) states
+            5: 'LR,T+,T0', #  Interacts with 0
+            6: 'LL,S,T0', # Interacts with 2
+            7: 'LR,S,T0', # Interacts with 1
+            8: 'RR,S,T-', # Interacts with 1 and 2
+            9: 'LR,T0,T0', #Interacts with 4
+            10: 'LR,T-,T0', # Interacts with 4
+            11: 'LL,T-,S', # Higher energy states
+            12: 'LL,S,T+',
+            13: 'LR,S,T+',
+            14: 'LR,T0,T+',
+            15: 'LR,T+,T+',
+            16: 'LL,T0,S', 
+            17: 'LL,T+,S',
+            18: 'LR,T0,S',
+            19: 'LR,T-,S',
+            20: 'LR,T+,S',
+            21: 'LR,S,S',
+            22: 'LR,T-,T+',
             23: 'RR,T-,S', 
             24: 'RR,T0,S',
             25: 'RR,T+,S',
@@ -678,22 +678,31 @@ class DQD_2particles_1orbital():
 
         list_of_activations.clear()
 
-        # Rest of (2,0) configurations
+        # Interactions
 
         list_of_activations = [
 
-            {self.FSU.create_state_from_occupied_orbitals([1,3]): +1}, # LL,T-,S
+            {self.FSU.create_state_from_occupied_orbitals([0,6]): +1,
+              self.FSU.create_state_from_occupied_orbitals([2,4]): +1},  #  LR,T+,T0
 
-            {self.FSU.create_state_from_occupied_orbitals([0,3]): +1,
-            self.FSU.create_state_from_occupied_orbitals([1,2]): +1}, # LL,T0,S
-
-            {self.FSU.create_state_from_occupied_orbitals([0,2]): +1}, # LL,T+,S
-
-            {self.FSU.create_state_from_occupied_orbitals([0,3]): +1,
+             {self.FSU.create_state_from_occupied_orbitals([0,3]): +1,
             self.FSU.create_state_from_occupied_orbitals([1,2]): -1}, # LL,S,T0
 
-            {self.FSU.create_state_from_occupied_orbitals([0,1]): +1} # LL,S,T+
+            {self.FSU.create_state_from_occupied_orbitals([0,7]):+1,
+             self.FSU.create_state_from_occupied_orbitals([2,5]):+1,
+             self.FSU.create_state_from_occupied_orbitals([1,6]):-1,
+             self.FSU.create_state_from_occupied_orbitals([3,4]):-1}, # LR,S,T0
 
+            {self.FSU.create_state_from_occupied_orbitals([6,7]): +1}, # RR,S,T-
+
+
+            {self.FSU.create_state_from_occupied_orbitals([0,7]): +1,
+              self.FSU.create_state_from_occupied_orbitals([2,5]): +1,
+              self.FSU.create_state_from_occupied_orbitals([1,6]): +1,
+              self.FSU.create_state_from_occupied_orbitals([3,4]): +1},  # LR,T0,T0
+
+            {self.FSU.create_state_from_occupied_orbitals([1,7]): +1,
+              self.FSU.create_state_from_occupied_orbitals([3,5]): +1},  # LR,T-,T0
 
         ]
 
@@ -702,17 +711,26 @@ class DQD_2particles_1orbital():
 
         list_of_activations.clear()
 
-        # Rest of symmetric (1,1) configuratioons
+        # Rest
 
         list_of_activations = [
 
-            {self.FSU.create_state_from_occupied_orbitals([0,7]):+1,
-             self.FSU.create_state_from_occupied_orbitals([2,5]):+1,
-             self.FSU.create_state_from_occupied_orbitals([1,6]):-1,
-             self.FSU.create_state_from_occupied_orbitals([3,4]):-1}, # LR,S,T0
+            {self.FSU.create_state_from_occupied_orbitals([1,3]): +1}, # LL,T-,S
 
-             {self.FSU.create_state_from_occupied_orbitals([0,5]): +1,
+            {self.FSU.create_state_from_occupied_orbitals([0,1]): +1}, # LL,S,T+
+
+            {self.FSU.create_state_from_occupied_orbitals([0,5]): +1,
               self.FSU.create_state_from_occupied_orbitals([1,4]): -1}, # LR,S,T+
+
+            {self.FSU.create_state_from_occupied_orbitals([0,5]): +1,
+              self.FSU.create_state_from_occupied_orbitals([1,4]): +1},  #  LR,T0,T+
+
+            {self.FSU.create_state_from_occupied_orbitals([0,4]): +1},  # LR,T+,T+
+
+            {self.FSU.create_state_from_occupied_orbitals([0,3]): +1,
+            self.FSU.create_state_from_occupied_orbitals([1,2]): +1}, # LL,T0,S
+
+            {self.FSU.create_state_from_occupied_orbitals([0,2]): +1}, # LL,T+,S
 
              {self.FSU.create_state_from_occupied_orbitals([0,7]):+1,
              self.FSU.create_state_from_occupied_orbitals([2,5]):-1,
@@ -723,50 +741,14 @@ class DQD_2particles_1orbital():
               self.FSU.create_state_from_occupied_orbitals([3,5]): -1}, # LR,T-,S
 
              {self.FSU.create_state_from_occupied_orbitals([0,6]): +1,
-              self.FSU.create_state_from_occupied_orbitals([2,4]): -1} # LR,T+,S
-        ]
+              self.FSU.create_state_from_occupied_orbitals([2,4]): -1}, # LR,T+,S
 
-        for activation in list_of_activations:
-            list_of_vectors.append(self.FSU.create_normalized_vector(activation))
-
-        list_of_activations.clear()
-
-        # Rest of (1,1) orbital antisymmetric configurations
-        list_of_activations = [
-            {self.FSU.create_state_from_occupied_orbitals([0,7]): +1,
-            self.FSU.create_state_from_occupied_orbitals([2,5]): -1,
-            self.FSU.create_state_from_occupied_orbitals([1,6]): -1,
-            self.FSU.create_state_from_occupied_orbitals([3,4]): +1},  # S,S
-
-            {self.FSU.create_state_from_occupied_orbitals([0,7]): +1,
-            self.FSU.create_state_from_occupied_orbitals([2,5]): +1,
-            self.FSU.create_state_from_occupied_orbitals([1,6]): +1,
-            self.FSU.create_state_from_occupied_orbitals([3,4]): +1},  # T0,T0
-
-            {self.FSU.create_state_from_occupied_orbitals([0,5]): +1,
-            self.FSU.create_state_from_occupied_orbitals([1,4]): +1},  #  T0,T+
-
-            {self.FSU.create_state_from_occupied_orbitals([0,6]): +1,
-            self.FSU.create_state_from_occupied_orbitals([2,4]): +1},  #  T+,T0
-
-            {self.FSU.create_state_from_occupied_orbitals([0,4]): +1},  # T+,T+
-
-            {self.FSU.create_state_from_occupied_orbitals([1,7]): +1,
-            self.FSU.create_state_from_occupied_orbitals([3,5]): +1},  # T-,T0
+             {self.FSU.create_state_from_occupied_orbitals([0,7]): +1,
+              self.FSU.create_state_from_occupied_orbitals([2,5]): -1,
+              self.FSU.create_state_from_occupied_orbitals([1,6]): -1,
+              self.FSU.create_state_from_occupied_orbitals([3,4]): +1},  # S,S
 
             {self.FSU.create_state_from_occupied_orbitals([1,5]): +1},  # T-,T+
-
-        ]
-
-        for activation in list_of_activations:
-            list_of_vectors.append(self.FSU.create_normalized_vector(activation))
-
-        list_of_activations.clear()
-
-        # Rest of (0,2) configurations
-
-        list_of_activations = [
-            {self.FSU.create_state_from_occupied_orbitals([6,7]): +1}, # RR,S,T-
 
             {self.FSU.create_state_from_occupied_orbitals([5,7]): +1}, # RR,T-,S
 
@@ -779,12 +761,12 @@ class DQD_2particles_1orbital():
             self.FSU.create_state_from_occupied_orbitals([5,6]): -1}, # RR,S,T0
 
             {self.FSU.create_state_from_occupied_orbitals([4,5]): +1}, # RR,S,T+
-
-            
         ]
 
         for activation in list_of_activations:
             list_of_vectors.append(self.FSU.create_normalized_vector(activation))
+
+        list_of_activations.clear()
 
 
         correspondence = self.singlet_triplet_reordered_correspondence

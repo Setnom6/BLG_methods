@@ -10,30 +10,33 @@ from datetime import datetime
 
 def runDynamics(fixedParameters, initialStateLabel):
 
-    # === Parámetros del protocolo de barrido ===
-    tRamp, tWait, tJump, tWait2 = 0.6, 1.66, 0.05, 0.5  # en ns
-    tTotal = tRamp+tWait+tJump+tWait2
+    # === Sweep protocol parameters (in ns) ===
+    tRamp, tWait, tJump, tWait2 = 0.6, 1.13, 0.05, 1.0
+    tTotal = tRamp + tWait + tJump + tWait2
     totalPoints = 500
-    nRamp, nWait, nJump, nWait2 = int(tRamp*totalPoints/tTotal), int(tWait*totalPoints/tTotal), int(tJump*totalPoints/tTotal),  int(tWait2*totalPoints/tTotal)  # número de puntos por tramo
+    nRamp = int(tRamp * totalPoints / tTotal)
+    nWait = int(tWait * totalPoints / tTotal)
+    nJump = int(tJump * totalPoints / tTotal)
+    nWait2 = int(tWait2 * totalPoints / tTotal)
 
     nsToMeV = 1519.29
+
     dqd = DQD_2particles_1orbital(fixedParameters)
     basis = dqd.singlet_triplet_reordered_basis
     correspondence = dqd.singlet_triplet_reordered_correspondence
     inverseCorrespondence = {v: k for k, v in correspondence.items()}
-    N = 5  # Tamaño del bloque H00
+    N = 11  # Size of H00 block
 
-    # === Tiempo en ns y meV⁻¹ ===
+    # === Time vectors (in ns and meV⁻¹) ===
     tlistNano = np.concatenate([
         np.linspace(0, tRamp, nRamp, endpoint=False),
         np.linspace(tRamp, tRamp + tWait, nWait, endpoint=False),
         np.linspace(tRamp + tWait, tRamp + tWait + tJump, nJump, endpoint=False),
-        np.linspace(tRamp + tWait + tJump, tRamp + tWait + tJump+tWait2, nWait2)
+        np.linspace(tRamp + tWait + tJump, tTotal, nWait2)
     ])
-
     tlist = nsToMeV * tlistNano
 
-    # === Detuning E_I(t) ===
+    # === Detuning profile E_I(t) ===
     eiStart = 0.0
     eiMiddle = 8.25
     eiSharp = 2.0 * 8.5
@@ -47,12 +50,41 @@ def runDynamics(fixedParameters, initialStateLabel):
     ])
     assert len(eiValues) == len(tlist)
 
-    # === Estado inicial ===
-    rho0 = np.zeros((N, N))
-    rho0[inverseCorrespondence[initialStateLabel], inverseCorrespondence[initialStateLabel]] = 1
-    rho0 = Qobj(rho0)
+    # === Initial state ===
+    if isinstance(initialStateLabel, list):
+        # Normalized equal-weight superposition of given states
+        psi0Vec = np.zeros(N, dtype=complex)
+        for label in initialStateLabel:
+            psi0Vec[inverseCorrespondence[label]] += 1.0
+        psi0Vec /= np.linalg.norm(psi0Vec)
+        psi0 = Qobj(psi0Vec.reshape((N, 1)))
+        rho0 = psi0 * psi0.dag()
 
-    # === Precalcular Hamiltonianos efectivos ===
+    elif isinstance(initialStateLabel, str) and initialStateLabel.lower() == "ground_state":
+        # Compute H_eff at t = 0 and get its ground state
+        ei0 = eiValues[0]
+        params = fixedParameters.copy()
+        params[DQDParameters.E_I.value] = ei0
+
+        H_full = dqd.project_hamiltonian(basis, parameters_to_change=params)
+        H00 = H_full[:N, :N]
+        H01 = H_full[:N, N:]
+        H10 = H_full[N:, :N]
+        H11 = H_full[N:, N:]
+
+        hEff = H00 - H01 @ inv(H11) @ H10
+        hEffQobj = Qobj(hEff)
+        evals, evecs = hEffQobj.eigenstates()
+        psi0 = evecs[0]  # ground state
+        rho0 = psi0 * psi0.dag()
+
+    else:
+        # Pure state from string label
+        rho0 = np.zeros((N, N))
+        rho0[inverseCorrespondence[initialStateLabel], inverseCorrespondence[initialStateLabel]] = 1
+        rho0 = Qobj(rho0)
+
+    # === Precompute effective Hamiltonians ===
     hEffList = []
     for ei in eiValues:
         params = fixedParameters.copy()
@@ -67,21 +99,20 @@ def runDynamics(fixedParameters, initialStateLabel):
         hEff = H00 - H01 @ inv(H11) @ H10
         hEffList.append(Qobj(hEff))
 
-    # === Hamiltoniano dependiente del tiempo ===
+    # === Time-dependent Hamiltonian function ===
     def hEffTimeDependent(t, args):
         idx = np.argmin(np.abs(tlist - t))
         return hEffList[idx]
 
-    # === Evolución temporal ===
+    # === Time evolution ===
     result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=[])
-
     populations = np.array([state.diag() for state in result.states])
 
-    # === Gráfica con subplot adicional para E_I(t) ===
-    fig, (ax1, ax2) = plt.subplots(nrows=2, sharex=True, figsize=(10, 7), height_ratios=[3, 1])
+    # === Plotting: individual populations, detuning, total singlet/triplet ===
+    fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, sharex=True, figsize=(10, 10), height_ratios=[3, 1, 1])
 
-    # Poblaciones
-    statesToPlot = ["LR,T+,T-", "LL,S,T-", "LR,S,T-", 'LR,T0,T-', 'LR,T-,T-']
+    # Individual populations
+    statesToPlot = [correspondence[i] for i in range(N)]
     for label in statesToPlot:
         index = inverseCorrespondence[label]
         ax1.plot(tlistNano, populations[:, index], label=label)
@@ -90,38 +121,59 @@ def runDynamics(fixedParameters, initialStateLabel):
     ax1.legend(loc='center left', bbox_to_anchor=(1.05, 0.5))
     ax1.grid()
 
-    # Detuning
+    # Detuning E_I(t)
     ax2.plot(tlistNano, eiValues, color='black', linewidth=2)
-    ax2.set_xlabel('Time (ns)')
     ax2.set_ylabel(r'$E_I$ (meV)')
     ax2.set_title('Detuning sweep')
     ax2.grid()
 
-    plt.subplots_adjust(hspace=0.3, right=0.75)
+    # Singlet and triplet subspace populations
+    sumTriplet = (
+        populations[:, inverseCorrespondence["LR,T+,T-"]] +
+        populations[:, inverseCorrespondence["LR,T0,T-"]] +
+        populations[:, inverseCorrespondence["LR,T-,T-"]]
+    )
+    sumSinglet = (
+        populations[:, inverseCorrespondence["LL,S,T-"]] +
+        populations[:, inverseCorrespondence["LR,S,T-"]]
+    )
+    sum5States = sumTriplet + sumSinglet
 
-    # === Guardar resultados ===
+    ax3.plot(tlistNano, sumTriplet, label='Triplet', linestyle='--', color='tab:blue')
+    ax3.plot(tlistNano, sumSinglet, label='Singlet', linestyle='--', color='tab:green')
+    ax3.plot(tlistNano, sum5States, label='Total (5 states)', linestyle='-', color='tab:red')
+    ax3.set_xlabel('Time (ns)')
+    ax3.set_ylabel('Populations')
+    ax3.set_title('Total populations in relevant subspace')
+    ax3.legend()
+    ax3.grid()
+
+    plt.subplots_adjust(hspace=0.4, right=0.75)
+
+    # === Save results ===
     figuresDir = os.path.join(os.getcwd(), "DQD_2particles_1orbital", "figures")
     os.makedirs(figuresDir, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     figPath = os.path.join(figuresDir, f"TimeSweep_{timestamp}.png")
     plt.savefig(figPath)
-    print(f"Figura guardada en: {figPath}")
+    print(f"Figure saved at: {figPath}")
 
     paramPath = os.path.join(figuresDir, f"parameters_TimeSweep_{timestamp}.txt")
     with open(paramPath, 'w') as f:
         for key, value in fixedParameters.items():
             f.write(f"{key}: {value}\n")
-    print(f"Parámetros guardados en: {paramPath}")
+    print(f"Parameters saved at: {paramPath}")
 
     plt.show()
 
 
-# === PARÁMETROS ===
+# === PARAMETERS ===
 gOrtho = 10
 U0 = 8.5
 U1 = 0.1
 Ei = 8.25
+
 fixedParameters = {
     DQDParameters.B_FIELD.value: 0.2,
     DQDParameters.B_PARALLEL.value: 0.165,
@@ -146,8 +198,14 @@ fixedParameters = {
     DQDParameters.J.value: 0.00075 / gOrtho,
 }
 
-# === EJECUTAR ===
-runDynamics(fixedParameters, initialStateLabel="LR,T+,T-")
+# === EXECUTION EXAMPLES ===
+initialStateOptions = {
+    0: "ground_state",
+    1: "LR,T+,T-",
+    2: ["LR,T+,T-", "LR,T0,T-"]
+}
+runDynamics(fixedParameters, initialStateLabel=initialStateOptions[0])
+
 
 
 
