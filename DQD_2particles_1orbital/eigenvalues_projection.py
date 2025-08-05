@@ -8,30 +8,30 @@ import numpy as np
 gOrtho = 10
 U0 = 8.5
 U1 = 0.1
-Ei = 0.0
+Ei = 8.23
 fixedParameters = {
-    DQDParameters.B_FIELD.value: 0.2,
-    DQDParameters.B_PARALLEL.value: 0.15,
-    DQDParameters.E_I.value: Ei,
-    DQDParameters.T.value: 0.004,
-    DQDParameters.DELTA_SO.value: 0.06,
-    DQDParameters.DELTA_KK.value: 0.02,
-    DQDParameters.T_SOC.value: 0.0,
-    DQDParameters.U0.value: U0,
-    DQDParameters.U1.value: U1,
-    DQDParameters.X.value: 0.02,
-    DQDParameters.G_ORTHO.value: gOrtho,
-    DQDParameters.G_ZZ.value: 10 * gOrtho,
-    DQDParameters.G_Z0.value: 2 * gOrtho / 3,
-    DQDParameters.G_0Z.value: 2 * gOrtho / 3,
-    DQDParameters.GS.value: 2,
-    DQDParameters.GSLFACTOR.value: 1.0,
-    DQDParameters.GV.value: 20.0,
-    DQDParameters.GVLFACTOR.value: 0.66,
-    DQDParameters.A.value: 0.1,
-    DQDParameters.P.value: 0.02,
-    DQDParameters.J.value: 0.00075 / gOrtho,
-}
+        DQDParameters.B_FIELD.value: 0.20,
+        DQDParameters.B_PARALLEL.value: 0.14,
+        DQDParameters.E_I.value: Ei,
+        DQDParameters.T.value: 0.004,
+        DQDParameters.DELTA_SO.value: 0.06,
+        DQDParameters.DELTA_KK.value: 0.02,
+        DQDParameters.T_SOC.value: 0.0,
+        DQDParameters.U0.value: U0,
+        DQDParameters.U1.value: U1,
+        DQDParameters.X.value: 0.02,
+        DQDParameters.G_ORTHO.value: gOrtho,
+        DQDParameters.G_ZZ.value: 10 * gOrtho,
+        DQDParameters.G_Z0.value: 2 * gOrtho / 3,
+        DQDParameters.G_0Z.value: 2 * gOrtho / 3,
+        DQDParameters.GS.value: 2,
+        DQDParameters.GSLFACTOR.value: 1.0,
+        DQDParameters.GV.value: 20.0,
+        DQDParameters.GVLFACTOR.value: 0.66,
+        DQDParameters.A.value: 0.1,
+        DQDParameters.P.value: 0.02,
+        DQDParameters.J.value: 0.00075 / gOrtho,
+    }
 
 # Then, we define the particular options for the plotting
 
