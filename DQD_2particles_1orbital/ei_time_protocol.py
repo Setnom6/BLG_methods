@@ -6,9 +6,8 @@ from qutip import *
 import numpy as np
 import os
 from datetime import datetime
-import multiprocessing
 from copy import deepcopy
-from functools import partial
+from joblib import Parallel, delayed, cpu_count
 
 # === Setup logger ===
 def setupLogger(logDir):
@@ -24,53 +23,53 @@ def setupLogger(logDir):
         ]
     )
 
-# Variable global que se inicializa una vez por proceso worker
-globalDqd = None
-
-def initWorker(fixedParameters):
-    global globalDqd
-    globalDqd = DQD_2particles_1orbital(fixedParameters)
-
 def runDynamics(detuning, fixedParameters, tTotal=2.5, N=5, totalPoints=300):
     try:
-        global globalDqd
         nsToMeV = 1519.29
+        dqd = DQD_2particles_1orbital(fixedParameters)
 
-        basis = globalDqd.singlet_triplet_reordered_basis
-        correspondence = globalDqd.singlet_triplet_reordered_correspondence
+        basis = dqd.singlet_triplet_reordered_basis
+        correspondence = dqd.singlet_triplet_reordered_correspondence
         inverseCorrespondence = {v: k for k, v in correspondence.items()}
 
         tlistNano = np.linspace(0, tTotal, totalPoints)
         tlist = nsToMeV * tlistNano
 
-        # Estado inicial a zero detuning (se puede guardar una vez y pasar como parámetro, pero por simplicidad se recalcula)
+        # Estado inicial
         params_initial = deepcopy(fixedParameters)
         params_initial[DQDParameters.E_I.value] = 0.0
 
-        H_full_initial = globalDqd.project_hamiltonian(basis, parameters_to_change=params_initial)
+        H_full_initial = dqd.project_hamiltonian(basis, parameters_to_change=params_initial)
         H00_initial = H_full_initial[:N, :N]
         H01_initial = H_full_initial[:N, N:]
         H10_initial = H_full_initial[N:, :N]
         H11_initial = H_full_initial[N:, N:]
 
-        # Usar solve en vez de inv para mayor estabilidad y velocidad
-        hEff_initial = H00_initial - H01_initial @ H11_initial @ H10_initial
+        if N == 28:
+            hEff_initial = H_full_initial
+        else:
+            hEff_initial = H00_initial - H01_initial @ inv(H11_initial) @ H10_initial
+
         hEffQobj_initial = Qobj(hEff_initial)
         _, evecs_initial = hEffQobj_initial.eigenstates()
         psi0 = evecs_initial[0]
         rho0 = psi0 * psi0.dag()
 
-        # Hamiltoniano efectivo para el detuning actual
+        # Hamiltoniano para el detuning actual
         params = deepcopy(fixedParameters)
         params[DQDParameters.E_I.value] = detuning
 
-        H_full = globalDqd.project_hamiltonian(basis, parameters_to_change=params)
+        H_full = dqd.project_hamiltonian(basis, parameters_to_change=params)
         H00 = H_full[:N, :N]
         H01 = H_full[:N, N:]
         H10 = H_full[N:, :N]
         H11 = H_full[N:, N:]
 
-        hEff = H00- H01 @ H11 @ H10
+        if N == 28:
+            hEff = H_full
+        else:
+            hEff = H00 - H01 @ inv(H11) @ H10
+
         hEffQobj = Qobj(hEff)
 
         result = mesolve(hEffQobj, rho0, tlist, c_ops=[])
@@ -98,17 +97,19 @@ def runDynamics(detuning, fixedParameters, tTotal=2.5, N=5, totalPoints=300):
 
     except Exception as e:
         logging.error(f"Error while simulating detuning = {detuning:.3f} meV: {e}")
-        return np.zeros(300)
+        return np.zeros(totalPoints)
 
 def plotCurrentMap(fixedParameters, detuningList, tTotal, N, totalPoints):
-    maxCores = 4  # limitar núcleos a 4 (ajustar según servidor)
-    availableCores = multiprocessing.cpu_count()
+    maxCores = 4
+    availableCores = cpu_count()
     numCores = min(maxCores, availableCores)
 
-    logging.info(f"Using {numCores} cores for multiprocessing.")
+    logging.info(f"Using {numCores} cores with joblib.")
 
-    with multiprocessing.Pool(processes=numCores, initializer=initWorker, initargs=(fixedParameters,)) as pool:
-        results = pool.map(partial(runDynamics, fixedParameters=fixedParameters, tTotal=tTotal, N=N, totalPoints=totalPoints), detuningList)
+    results = Parallel(n_jobs=numCores)(
+        delayed(runDynamics)(detuning, fixedParameters, tTotal, N, totalPoints)
+        for detuning in detuningList
+    )
 
     currentMatrix = np.array(results)
 
@@ -123,7 +124,8 @@ def plotCurrentMap(fixedParameters, detuningList, tTotal, N, totalPoints):
     plt.colorbar(im, label="I (no Pauli Blockade)")
     plt.xlabel("Time (ns)")
     plt.ylabel("E_i (meV)")
-    plt.title(f"Current vs detuning and interaction time for N={N}")
+    plt.title(f"Current vs detuning and interaction time for N={N}, " + 
+              f"bx = {fixedParameters[DQDParameters.B_PARALLEL.value]:.3f} T, bz = {fixedParameters[DQDParameters.B_FIELD.value]:.3f} T")
 
     figuresDir = os.path.join(os.getcwd(), "DQD_2particles_1orbital", "figures")
     os.makedirs(figuresDir, exist_ok=True)
@@ -180,5 +182,6 @@ if __name__ == "__main__":
     logging.info("Launching current map computation...")
     plotCurrentMap(fixedParameters, eiMiddleValues, totalTime, N, totalPoints)
     logging.info("Simulation completed.")
+
 
 

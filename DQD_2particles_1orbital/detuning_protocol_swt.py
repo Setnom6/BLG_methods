@@ -1,13 +1,35 @@
 from src.DQD_2particles_1orbital import DQD_2particles_1orbital, DQDParameters
 import matplotlib.pyplot as plt
-from scipy.linalg import inv
+from scipy.linalg import solve_sylvester
 from qutip import *
 import numpy as np
 import os
 from datetime import datetime
 
+def schriefferWolff(H_full):
+    N0 = 5
+    N1 = 6
+    N2 = 17
+    H00 = H_full[:N0, :N0]
+    
+    H01 = H_full[:N0, N0:N0+N1]
+    H10 = H_full[N0:N0+N1, :N0]
+    H11 = H_full[N0:N0+N1, N0:N0+N1]
 
-def runDynamics(fixedParameters, initialStateLabel):
+    H12 = H_full[N0:N0+N1, N0+N1:N0+N1+N2]
+    H21 = H_full[N0+N1:N0+N1+N2, N0:N0+N1]
+    H22 = H_full[N0+N1:N0+N1+N2, N0+N1:N0+N1+N2]
+
+    S12 = solve_sylvester(H11, -H22, -H12)
+    H11_eff = H11 + 0.5 * (H12 @ S12.conj().T + S12 @ H21)
+
+    S01 = solve_sylvester(H00, -H11_eff, -H01)
+    H00_eff = H00 + 0.5 * (H01 @ S01.conj().T + S01 @ H10)
+
+    return H00_eff
+
+
+def runDynamics(fixedParameters):
 
     # === Sweep protocol parameters (in ns) ===
     tRamp, tWait, tJump, tWait2 = 0.6, 0.85, 0.05, 1.0
@@ -24,7 +46,6 @@ def runDynamics(fixedParameters, initialStateLabel):
     basis = dqd.singlet_triplet_reordered_basis
     correspondence = dqd.singlet_triplet_reordered_correspondence
     inverseCorrespondence = {v: k for k, v in correspondence.items()}
-    N = 11  # Size of H00 block
 
     # === Time vectors (in ns and meV⁻¹) ===
     tlistNano = np.concatenate([
@@ -50,41 +71,20 @@ def runDynamics(fixedParameters, initialStateLabel):
     assert len(eiValues) == len(tlist)
 
     # === Initial state ===
-    if isinstance(initialStateLabel, list):
-        # Normalized equal-weight superposition of given states
-        psi0Vec = np.zeros(N, dtype=complex)
-        for label in initialStateLabel:
-            psi0Vec[inverseCorrespondence[label]] += 1.0
-        psi0Vec /= np.linalg.norm(psi0Vec)
-        psi0 = Qobj(psi0Vec.reshape((N, 1)))
-        rho0 = psi0 * psi0.dag()
+    # Compute H_eff at t = 0 and get its ground state
+    ei0 = eiValues[0]
+    params = fixedParameters.copy()
+    params[DQDParameters.E_I.value] = ei0
 
-    elif isinstance(initialStateLabel, str) and initialStateLabel.lower() == "ground_state":
-        # Compute H_eff at t = 0 and get its ground state
-        ei0 = eiValues[0]
-        params = fixedParameters.copy()
-        params[DQDParameters.E_I.value] = ei0
+    H_full = dqd.project_hamiltonian(basis, parameters_to_change=params)
+    H00_eff = schriefferWolff(H_full)
 
-        H_full = dqd.project_hamiltonian(basis, parameters_to_change=params)
-        H00 = H_full[:N, :N]
-        H01 = H_full[:N, N:]
-        H10 = H_full[N:, :N]
-        H11 = H_full[N:, N:]
+    # Convertir a Qobj si usas QuTiP
+    H00_eff_qobj = Qobj(H00_eff)
 
-        if N == 28:
-            hEff = H_full
-        else:
-            hEff = H00 - H01 @ inv(H11) @ H10
-        hEffQobj = Qobj(hEff)
-        evals, evecs = hEffQobj.eigenstates()
-        psi0 = evecs[0]  # ground state
-        rho0 = psi0 * psi0.dag()
-
-    else:
-        # Pure state from string label
-        rho0 = np.zeros((N, N))
-        rho0[inverseCorrespondence[initialStateLabel], inverseCorrespondence[initialStateLabel]] = 1
-        rho0 = Qobj(rho0)
+    _, evecs = H00_eff_qobj.eigenstates()
+    psi0 = evecs[0]  # ground state
+    rho0 = psi0 * psi0.dag()
 
     # === Precompute effective Hamiltonians ===
     hEffList = []
@@ -93,11 +93,11 @@ def runDynamics(fixedParameters, initialStateLabel):
         params[DQDParameters.E_I.value] = ei
 
         H_full = dqd.project_hamiltonian(basis, parameters_to_change=params)
-        if N == 28:
-            hEff = H_full
-        else:
-            hEff = H00 - H01 @ inv(H11) @ H10
-        hEffList.append(Qobj(hEff))
+        H00_eff = schriefferWolff(H_full)
+
+        # Convertir a Qobj si usas QuTiP
+        H00_eff_qobj = Qobj(H00_eff)
+        hEffList.append(H00_eff_qobj)
 
     # === Time-dependent Hamiltonian function ===
     def hEffTimeDependent(t, args):
@@ -112,7 +112,7 @@ def runDynamics(fixedParameters, initialStateLabel):
     fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, sharex=True, figsize=(10, 10), height_ratios=[3, 1, 1])
 
     # Individual populations
-    statesToPlot = [correspondence[i] for i in range(N)]
+    statesToPlot = [correspondence[i] for i in range(N0)]
     for label in statesToPlot:
         index = inverseCorrespondence[label]
         ax1.plot(tlistNano, populations[:, index], label=label)
@@ -155,11 +155,11 @@ def runDynamics(fixedParameters, initialStateLabel):
     os.makedirs(figuresDir, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    figPath = os.path.join(figuresDir, f"TimeSweep_{timestamp}.png")
+    figPath = os.path.join(figuresDir, f"TimeSweep_SWT_{timestamp}.png")
     plt.savefig(figPath)
     print(f"Figure saved at: {figPath}")
 
-    paramPath = os.path.join(figuresDir, f"parameters_TimeSweep_{timestamp}.txt")
+    paramPath = os.path.join(figuresDir, f"parameters_TimeSweep_SWT_{timestamp}.txt")
     with open(paramPath, 'w') as f:
         for key, value in fixedParameters.items():
             f.write(f"{key}: {value}\n")
@@ -197,14 +197,5 @@ fixedParameters = {
         DQDParameters.J.value: 0.00075 / gOrtho,
     }
 
-# === EXECUTION EXAMPLES ===
-initialStateOptions = {
-    0: "ground_state",
-    1: "LR,T+,T-",
-    2: ["LR,T+,T-", "LR,T0,T-"]
-}
-runDynamics(fixedParameters, initialStateLabel=initialStateOptions[0])
-
-
-
-
+# === EXECUTION ===
+runDynamics(fixedParameters)

@@ -1,13 +1,35 @@
 import logging
 from src.DQD_2particles_1orbital import DQD_2particles_1orbital, DQDParameters
 import matplotlib.pyplot as plt
-from scipy.linalg import inv
+from scipy.linalg import solve_sylvester
 from qutip import *
 import numpy as np
 import os
 from datetime import datetime
 from copy import deepcopy
 from joblib import Parallel, delayed, cpu_count
+
+def schriefferWolff(H_full):
+    N0 = 5
+    N1 = 6
+    N2 = 17
+    H00 = H_full[:N0, :N0]
+    
+    H01 = H_full[:N0, N0:N0+N1]
+    H10 = H_full[N0:N0+N1, :N0]
+    H11 = H_full[N0:N0+N1, N0:N0+N1]
+
+    H12 = H_full[N0:N0+N1, N0+N1:N0+N1+N2]
+    H21 = H_full[N0+N1:N0+N1+N2, N0:N0+N1]
+    H22 = H_full[N0+N1:N0+N1+N2, N0+N1:N0+N1+N2]
+
+    S12 = solve_sylvester(H11, -H22, -H12)
+    H11_eff = H11 + 0.5 * (H12 @ S12.conj().T + S12 @ H21)
+
+    S01 = solve_sylvester(H00, -H11_eff, -H01)
+    H00_eff = H00 + 0.5 * (H01 @ S01.conj().T + S01 @ H10)
+
+    return H00_eff
 
 # === Setup logger ===
 def setupLogger(logDir):
@@ -23,7 +45,7 @@ def setupLogger(logDir):
         ]
     )
 
-def runDynamics(bx, fixedParameters, tTotal=2.5, N=5, totalPoints=300):
+def runDynamics(bx, fixedParameters, tTotal=2.5, totalPoints=300):
     try:
         nsToMeV = 1519.29
         dqd = DQD_2particles_1orbital(fixedParameters)
@@ -41,12 +63,8 @@ def runDynamics(bx, fixedParameters, tTotal=2.5, N=5, totalPoints=300):
         params_initial[DQDParameters.E_I.value] = 0.0
 
         H_full_initial = dqd.project_hamiltonian(basis, parameters_to_change=params_initial)
-        H00_initial = H_full_initial[:N, :N]
-        H01_initial = H_full_initial[:N, N:]
-        H10_initial = H_full_initial[N:, :N]
-        H11_initial = H_full_initial[N:, N:]
 
-        hEff_initial = H00_initial - H01_initial @ inv(H11_initial) @ H10_initial
+        hEff_initial = schriefferWolff(H_full_initial)
         hEffQobj_initial = Qobj(hEff_initial)
         _, evecs_initial = hEffQobj_initial.eigenstates()
         psi0 = evecs_initial[0]
@@ -57,12 +75,7 @@ def runDynamics(bx, fixedParameters, tTotal=2.5, N=5, totalPoints=300):
         params[DQDParameters.B_PARALLEL.value] = bx
 
         H_full = dqd.project_hamiltonian(basis, parameters_to_change=params)
-        H00 = H_full[:N, :N]
-        H01 = H_full[:N, N:]
-        H10 = H_full[N:, :N]
-        H11 = H_full[N:, N:]
-
-        hEff = H00 - H01 @ inv(H11) @ H10
+        hEff = schriefferWolff(H_full)
         hEffQobj = Qobj(hEff)
 
         result = mesolve(hEffQobj, rho0, tlist, c_ops=[])
@@ -85,22 +98,22 @@ def runDynamics(bx, fixedParameters, tTotal=2.5, N=5, totalPoints=300):
 
             I_t.append(I.real)
 
-        logging.info(f"Simulation completed for bx = {bx:.3f} meV")
+        logging.info(f"Simulation completed for detuning = {bx:.3f} meV")
         return np.array(I_t)
 
     except Exception as e:
-        logging.error(f"Error while simulating bx = {bx:.3f} meV: {e}")
+        logging.error(f"Error while simulating detuning = {bx:.3f} meV: {e}")
         return np.zeros(totalPoints)
 
-def plotCurrentMap(fixedParameters, bxList, tTotal, N, totalPoints):
-    maxCores = 24
+def plotCurrentMap(fixedParameters, bxList, tTotal, totalPoints):
+    maxCores = 4
     availableCores = cpu_count()
     numCores = min(maxCores, availableCores)
 
     logging.info(f"Using {numCores} cores with joblib.")
 
     results = Parallel(n_jobs=numCores)(
-        delayed(runDynamics)(bx, fixedParameters, tTotal, N, totalPoints)
+        delayed(runDynamics)(bx, fixedParameters, tTotal, totalPoints)
         for bx in bxList
     )
 
@@ -117,18 +130,18 @@ def plotCurrentMap(fixedParameters, bxList, tTotal, N, totalPoints):
     plt.colorbar(im, label="I (no Pauli Blockade)")
     plt.xlabel("Time (ns)")
     plt.ylabel("bx (T)")
-    plt.title(f"Current vs bx and interaction time for N={N}, " +
+    plt.title(f"Current vs detuning and interaction time with SWT, " +
               f"ei = {fixedParameters[DQDParameters.E_I.value]:.3f} meV, bz = {fixedParameters[DQDParameters.B_FIELD.value]:.3f} T")
 
     figuresDir = os.path.join(os.getcwd(), "DQD_2particles_1orbital", "figures")
     os.makedirs(figuresDir, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    figPath = os.path.join(figuresDir, f"Current_bx_time_{timestamp}.png")
+    figPath = os.path.join(figuresDir, f"Current_bx_time_SWT_{timestamp}.png")
     plt.savefig(figPath)
     logging.info(f"Figure saved at: {figPath}")
 
-    paramPath = os.path.join(figuresDir, f"parameters_Current_bx_time_{timestamp}.txt")
+    paramPath = os.path.join(figuresDir, f"parameters_Current_bx_time_SWT_{timestamp}.txt")
     with open(paramPath, 'w') as f:
         for key, value in fixedParameters.items():
             f.write(f"{key}: {value}\n")
@@ -138,40 +151,43 @@ if __name__ == "__main__":
     figuresDir = os.path.join(os.getcwd(), "DQD_2particles_1orbital", "figures")
     setupLogger(figuresDir)
 
-    logging.info("Starting simulation...")
+    eiValues = np.linspace(8.23, 8.6, 1)
 
-    gOrtho = 10
-    U0 = 8.5
-    U1 = 0.1
-    fixedParameters = {
-        DQDParameters.B_FIELD.value: 0.20,
-        DQDParameters.B_PARALLEL.value: 0.15,
-        DQDParameters.E_I.value: 8.23,
-        DQDParameters.T.value: 0.004,
-        DQDParameters.DELTA_SO.value: 0.06,
-        DQDParameters.DELTA_KK.value: 0.02,
-        DQDParameters.T_SOC.value: 0.0,
-        DQDParameters.U0.value: U0,
-        DQDParameters.U1.value: U1,
-        DQDParameters.X.value: 0.02,
-        DQDParameters.G_ORTHO.value: gOrtho,
-        DQDParameters.G_ZZ.value: 10 * gOrtho,
-        DQDParameters.G_Z0.value: 2 * gOrtho / 3,
-        DQDParameters.G_0Z.value: 2 * gOrtho / 3,
-        DQDParameters.GS.value: 2,
-        DQDParameters.GSLFACTOR.value: 1.0,
-        DQDParameters.GV.value: 20.0,
-        DQDParameters.GVLFACTOR.value: 0.66,
-        DQDParameters.A.value: 0.1,
-        DQDParameters.P.value: 0.02,
-        DQDParameters.J.value: 0.00075 / gOrtho,
-    }
+    for idx, ei in enumerate(eiValues):
 
-    totalTime = 2.5  # ns
-    totalPoints = 600
-    bxValues = np.linspace(7.9, 8.5, totalPoints)  # meV
-    N = 5  # Size of H00 block
+        logging.info("Starting simulation...")
 
-    logging.info("Launching current map computation...")
-    plotCurrentMap(fixedParameters, bxValues, totalTime, N, totalPoints)
-    logging.info("Simulation completed.")
+        gOrtho = 10
+        U0 = 8.5
+        U1 = 0.1
+        fixedParameters = {
+            DQDParameters.B_FIELD.value: 0.20,
+            DQDParameters.B_PARALLEL.value: 0.0,
+            DQDParameters.E_I.value: ei,
+            DQDParameters.T.value: 0.004,
+            DQDParameters.DELTA_SO.value: 0.06,
+            DQDParameters.DELTA_KK.value: 0.02,
+            DQDParameters.T_SOC.value: 0.0,
+            DQDParameters.U0.value: U0,
+            DQDParameters.U1.value: U1,
+            DQDParameters.X.value: 0.02,
+            DQDParameters.G_ORTHO.value: gOrtho,
+            DQDParameters.G_ZZ.value: 10 * gOrtho,
+            DQDParameters.G_Z0.value: 2 * gOrtho / 3,
+            DQDParameters.G_0Z.value: 2 * gOrtho / 3,
+            DQDParameters.GS.value: 2,
+            DQDParameters.GSLFACTOR.value: 1.0,
+            DQDParameters.GV.value: 20.0,
+            DQDParameters.GVLFACTOR.value: 0.66,
+            DQDParameters.A.value: 0.1,
+            DQDParameters.P.value: 0.02,
+            DQDParameters.J.value: 0.00075 / gOrtho,
+        }
+
+        totalTime = 2.5  # ns
+        totalPoints = 600
+        bxValues = np.linspace(7.9, 8.5, totalPoints)  # meV
+
+        logging.info("Launching current map computation...")
+        plotCurrentMap(fixedParameters, bxValues, totalTime, totalPoints)
+        logging.info(f"Simulation {idx+1}/{len(eiValues)} completed.")
