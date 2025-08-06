@@ -5,8 +5,9 @@ from qutip import *
 import numpy as np
 import os
 from datetime import datetime
+from pymablock import block_diagonalize
 
-def schriefferWolff(H_full):
+def schriefferWolff_fake(H_full):
     N0 = 5
     N1 = 6
     N2 = 17
@@ -27,6 +28,21 @@ def schriefferWolff(H_full):
     H00_eff = H00 + 0.5 * (H01 @ S01.conj().T + S01 @ H10)
 
     return H00_eff
+
+def schriefferWolff(H_full):
+    N0 = 5
+    N1 = 6
+    subspace_indices = [0]*N0 + [1]*N1
+    H0_tot = H_full[:N0+N1, :N0+N1]
+    H0 = np.diag(np.diag(H0_tot))
+    H1 = H0_tot-H0
+
+    hamiltonian = [H0, H1]
+
+    H_tilde, _, _ = block_diagonalize(hamiltonian, subspace_indices=subspace_indices)
+
+    transformed_H = np.ma.sum(H_tilde[:2, :2, :3], axis=2)
+    return transformed_H[0, 0]
 
 
 def runDynamics(fixedParameters):
@@ -72,9 +88,8 @@ def runDynamics(fixedParameters):
 
     # === Initial state ===
     # Compute H_eff at t = 0 and get its ground state
-    ei0 = eiValues[0]
     params = fixedParameters.copy()
-    params[DQDParameters.E_I.value] = ei0
+    params[DQDParameters.E_I.value] = 0.0
 
     H_full = dqd.project_hamiltonian(basis, parameters_to_change=params)
     H00_eff = schriefferWolff(H_full)
@@ -112,7 +127,7 @@ def runDynamics(fixedParameters):
     fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, sharex=True, figsize=(10, 10), height_ratios=[3, 1, 1])
 
     # Individual populations
-    statesToPlot = [correspondence[i] for i in range(N0)]
+    statesToPlot = [correspondence[i] for i in range(5)]
     for label in statesToPlot:
         index = inverseCorrespondence[label]
         ax1.plot(tlistNano, populations[:, index], label=label)

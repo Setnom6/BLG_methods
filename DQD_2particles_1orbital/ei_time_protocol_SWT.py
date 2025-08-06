@@ -1,35 +1,28 @@
 import logging
 from src.DQD_2particles_1orbital import DQD_2particles_1orbital, DQDParameters
 import matplotlib.pyplot as plt
-from scipy.linalg import solve_sylvester
 from qutip import *
 import numpy as np
 import os
 from datetime import datetime
 from copy import deepcopy
 from joblib import Parallel, delayed, cpu_count
+from pymablock import block_diagonalize
 
 def schriefferWolff(H_full):
     N0 = 5
     N1 = 6
-    N2 = 17
-    H00 = H_full[:N0, :N0]
-    
-    H01 = H_full[:N0, N0:N0+N1]
-    H10 = H_full[N0:N0+N1, :N0]
-    H11 = H_full[N0:N0+N1, N0:N0+N1]
+    subspace_indices = [0]*N0 + [1]*N1
+    H0_tot = H_full[:N0+N1, :N0+N1]
+    H0 = np.diag(np.diag(H0_tot))
+    H1 = H0_tot-H0
 
-    H12 = H_full[N0:N0+N1, N0+N1:N0+N1+N2]
-    H21 = H_full[N0+N1:N0+N1+N2, N0:N0+N1]
-    H22 = H_full[N0+N1:N0+N1+N2, N0+N1:N0+N1+N2]
+    hamiltonian = [H0, H1]
 
-    S12 = solve_sylvester(H11, -H22, -H12)
-    H11_eff = H11 + 0.5 * (H12 @ S12.conj().T + S12 @ H21)
+    H_tilde, _, _ = block_diagonalize(hamiltonian, subspace_indices=subspace_indices)
 
-    S01 = solve_sylvester(H00, -H11_eff, -H01)
-    H00_eff = H00 + 0.5 * (H01 @ S01.conj().T + S01 @ H10)
-
-    return H00_eff
+    transformed_H = np.ma.sum(H_tilde[:2, :2, :3], axis=2)
+    return transformed_H[0, 0]
 
 # === Setup logger ===
 def setupLogger(logDir):
@@ -105,7 +98,7 @@ def runDynamics(detuning, fixedParameters, tTotal=2.5, totalPoints=300):
         return np.zeros(totalPoints)
 
 def plotCurrentMap(fixedParameters, detuningList, tTotal, totalPoints):
-    maxCores = 4
+    maxCores = 24
     availableCores = cpu_count()
     numCores = min(maxCores, availableCores)
 
