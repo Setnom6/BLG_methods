@@ -34,8 +34,8 @@ fixedParameters = {
 
 DM = DynamicsManager(fixedParameters)
 
-intervalTimes = [0.6, 0.5, 0.05, 1.0] # First solpe, anticrossingn plateau, second slope, final plateau in ns
-totalPoints = 300
+intervalTimes = [0.6, 1.5, 0.05, 1.0] # First solpe, anticrossingn plateau, second slope, final plateau in ns
+totalPoints = 600
 
 populations, tlistNano, eiValues = DM.detuningProtocol(intervalTimes, totalPoints)
 

@@ -6,7 +6,7 @@ from scipy.fft import fft, fftfreq
 gOrtho = 10
 U0 = 8.5
 U1 = 0.1
-Ei = 2*8.25
+Ei = 8.25
 bx = 0.179
 fixedParameters = {
             DQDParameters.B_FIELD.value: 0.20,
@@ -34,7 +34,7 @@ fixedParameters = {
 
 DM = DynamicsManager(fixedParameters)
 maxTime = 2.5 # ns
-totalPoints = 300
+totalPoints = 600
 times = np.linspace(0, maxTime, totalPoints)
 
 initialState = None # for ground state keep it in None
@@ -44,15 +44,22 @@ currents = DM.getCurrent(populations)
 
 # Obtain frequency
 I_t_centered = currents - np.mean(currents)
-N = len(currents)
+N = len(I_t_centered)
 T = times[1] - times[0]
 
-yf = fft(I_t_centered)
-xf = fftfreq(N, T)[:N // 2] 
-spectrum = 2.0 / N * np.abs(yf[0:N // 2])
+paddingFactor = 4
+N_padded = paddingFactor * N
+yf = fft(I_t_centered, n=N_padded)
+xf = fftfreq(N_padded, T)[:N_padded // 2]
+spectrum = 2.0 / N * np.abs(yf[:N_padded // 2])
 
-dominantIndex = np.argmax(spectrum)
-dominantFrequency = xf[dominantIndex]  # in GHz (as T is in ns)
+i = np.argmax(spectrum)
+if 1 <= i < len(spectrum) - 1:
+    y0, y1, y2 = spectrum[i - 1], spectrum[i], spectrum[i + 1]
+    dx = (y2 - y0) / (2 * (2 * y1 - y2 - y0))
+    dominantFrequency = xf[i] + dx * (xf[1] - xf[0])
+else:
+    dominantFrequency = xf[i]
 periodNs = 1.0 / dominantFrequency if dominantFrequency > 0 else np.inf
 
 print(f"Dominant oscillation frequency: {dominantFrequency:.3f} GHz")

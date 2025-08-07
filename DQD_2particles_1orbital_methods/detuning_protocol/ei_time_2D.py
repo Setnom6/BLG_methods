@@ -63,9 +63,9 @@ if __name__ == "__main__":
     }
 
     maxTime = 2.5
-    totalPoints = 300
+    totalPoints = 600
     detuningList = np.linspace(7.9, 8.4, totalPoints)
-    bxList = np.linspace(0.15, 0.5, 1)
+    bxList = np.array([0.05, 0.1, 0.125, 0.179, 0.2, 0.25])
 
     timesNs = np.linspace(0, maxTime, totalPoints)
 
