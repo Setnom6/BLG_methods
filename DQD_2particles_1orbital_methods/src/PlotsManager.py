@@ -167,7 +167,7 @@ class PlotsManager:
         return dict_labels
     
     def save_figure_and_parameters(self):
-        figures_dir = os.path.join(os.getcwd(),"DQD_2particles_1orbital", "figures", self.extra_folder)
+        figures_dir = os.path.join(os.getcwd(),"DQD_2particles_1orbital_methods", "figures", self.extra_folder)
         os.makedirs(figures_dir, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

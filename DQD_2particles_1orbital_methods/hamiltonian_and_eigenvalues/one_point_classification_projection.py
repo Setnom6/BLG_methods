@@ -1,3 +1,6 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.DQD_2particles_1orbital import DQD_2particles_1orbital, DQDParameters
 import numpy as np
 from scipy.linalg import eigh
