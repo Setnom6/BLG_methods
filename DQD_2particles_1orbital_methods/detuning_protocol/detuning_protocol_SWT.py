@@ -34,10 +34,10 @@ fixedParameters = {
 
 DM = DynamicsManager(fixedParameters)
 
-intervalTimes = [0.6, 1.5, 0.05, 1.0] # First solpe, anticrossingn plateau, second slope, final plateau in ns
-totalPoints = 600
+intervalTimes = [6, 5.5, 1, 4] # First solpe, anticrossingn plateau, second slope, final plateau in ns
+totalPoints = 1200
 
-populations, tlistNano, eiValues = DM.detuningProtocol(intervalTimes, totalPoints)
+populations, tlistNano, eiValues = DM.detuningProtocol(intervalTimes, totalPoints, filter=False, dephasing=0.01)
 
 fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, sharex=True, figsize=(10, 10), height_ratios=[3, 1, 1])
 

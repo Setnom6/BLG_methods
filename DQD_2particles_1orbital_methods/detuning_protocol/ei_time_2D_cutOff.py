@@ -96,7 +96,7 @@ if __name__ == "__main__":
         plt.xlabel("Time (ns)")
         plt.ylabel("E_i (meV)")
         plt.title(f"Current vs detuning and interaction time for {cutOffN} first states, " + 
-                f"bx = {fixedParameters[DQDParameters.B_PARALLEL.value]:.3f} T, bz = {fixedParameters[DQDParameters.B_FIELD.value]:.3f} T")
+                f"bx = {parameters[DQDParameters.B_PARALLEL.value]:.3f} T, bz = {parameters[DQDParameters.B_FIELD.value]:.3f} T")
         
         DM = DynamicsManager(parameters)
         DM.saveResults(name="rabi_2D_ei_cutOff")

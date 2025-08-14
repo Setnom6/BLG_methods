@@ -63,9 +63,9 @@ if __name__ == "__main__":
     }
 
     maxTime = 2.5
-    totalPoints = 600
-    detuningList = np.linspace(7.9, 8.4, totalPoints)
-    bxList = np.array([0.05, 0.1, 0.125, 0.179, 0.2, 0.25])
+    totalPoints = 300
+    detuningList = np.linspace(7.5, 9.5, totalPoints)
+    bxList = np.array([0.179])
 
     timesNs = np.linspace(0, maxTime, totalPoints)
 
@@ -95,7 +95,7 @@ if __name__ == "__main__":
         plt.xlabel("Time (ns)")
         plt.ylabel("E_i (meV)")
         plt.title(f"Current vs detuning and interaction time for SWT, " + 
-                f"bx = {fixedParameters[DQDParameters.B_PARALLEL.value]:.3f} T, bz = {fixedParameters[DQDParameters.B_FIELD.value]:.3f} T")
+                f"bx = {parameters[DQDParameters.B_PARALLEL.value]:.3f} T, bz = {parameters[DQDParameters.B_FIELD.value]:.3f} T")
         
         DM = DynamicsManager(parameters)
         DM.saveResults(name="rabi_2D_ei")
