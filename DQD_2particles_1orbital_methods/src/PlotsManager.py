@@ -16,6 +16,7 @@ class BasisToProject(Enum):
     SINGLET_TRIPLET_BASIS = 'Singlet Triplet symmetry'
     SINGLET_TRIPLET_IN_SPIN_BASIS = "Singlet-Triplet in Spin"
     SINGLET_TRIPLET_REORDERED_BASIS = 'Singlet Triplet Reordered'
+    SPIN_PLUS_VALLYE_MINUS_BASIS = "Spin Plus - Valley Minus"
     ORBITAL_SYMMETRY = 'Orbital symmetry'
     SPIN_SYMMETRY = 'Spin Symmetry'
     VALLEY_SYMMETRY = 'Valley Symmetry'
@@ -93,6 +94,7 @@ class PlotsManager:
             BasisToProject.ORIGINAL : (dqd.original_basis, dqd.original_correspondence, {}),
             BasisToProject.SINGLET_TRIPLET_BASIS : (dqd.singlet_triplet_basis, dqd.singlet_triplet_correspondence, {"LL": 6, "LR": 16, "RR": 6}),
             BasisToProject.SINGLET_TRIPLET_IN_SPIN_BASIS : (dqd.singlet_triplet_in_spin_basis, dqd.singlet_triplet_in_spin_correspondence, {"LL": 6, "LR--": 4, "LR+-": 8, "LR++": 4, "RR": 6}),
+            BasisToProject.SPIN_PLUS_VALLYE_MINUS_BASIS : (dqd.spinPlus_valleyMinus_basis, dqd.spinPlus_valleyMinus_correspondence, {"LL": 6, "LRT-": 4, "LRS": 4, "LRT0": 4,"LRT+": 4, "RR": 6}),
             BasisToProject.SINGLET_TRIPLET_REORDERED_BASIS : (dqd.singlet_triplet_reordered_basis, dqd.singlet_triplet_reordered_correspondence, {"LessEnergetic": 5, "Interacts": 6, "Rest": 17}),
             BasisToProject.ORBITAL_SYMMETRY:  (dqd.orbital_symmetry_basis, dqd.symmetric_antisymmetric_correspondence, {"Sym": 6, "AntiSym": 10, "ortho": 12}),
             BasisToProject.SPIN_SYMMETRY: (dqd.spin_symmetry_basis, dqd.symmetric_antisymmetric_correspondence, {"Sym": 6, "AntiSym": 10, "ortho": 12}),

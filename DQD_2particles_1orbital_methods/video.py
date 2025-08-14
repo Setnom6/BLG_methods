@@ -4,12 +4,13 @@ import imageio.v2 as imageio
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
-base_name = "Current_ei_time"
+base_name = "Heatmap"
 extension = ".png"
-output_video = os.path.join(current_dir, "figures", "forVideo", "ei_rabi_oscillations_SWT_details.mp4")
+output_video = os.path.join(current_dir, "figures", "heatmap.mp4")
 fps = 2
 
-pattern = os.path.join(current_dir, f"{base_name}*{extension}")
+pattern = os.path.join(current_dir, "figures", "forVideo", f"{base_name}*{extension}")
+print(pattern)
 png_files = sorted(glob.glob(pattern))
 
 if not png_files:

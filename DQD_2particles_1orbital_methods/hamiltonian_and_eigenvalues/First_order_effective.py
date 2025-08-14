@@ -124,9 +124,9 @@ axs[0].legend()
 
 # 3. Error First order vs Full
 for i in range(N):
-    axs[1].plot(eiValues, errors_SWT[:, i], 'C' + str(i), label=f'Level {i} SWT')
+    axs[1].plot(eiValues, errors_SWT[:, i], 'C' + str(i) + '--', label=f'Level {i} SWT')
     #axs[1].plot(eiValues, errors_naif[:, i], 'C' + str(i) + '.', label=f'Level {i} FoN')
-    axs[1].plot(eiValues, errors_H00[:, i], 'C' + str(i) + '--', label=f'Level {i} H00')
+    axs[1].plot(eiValues, errors_H00[:, i], 'C' + str(i)  + ':', label=f'Level {i} H00')
 axs[1].set_yscale("log")
 axs[1].set_xlabel("$E_I$ (meV)")
 axs[1].set_ylabel("Abs. Error (meV)")
