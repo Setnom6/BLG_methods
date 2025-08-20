@@ -5,16 +5,16 @@ from src.DQD_2particles_1orbital import DQD_2particles_1orbital, DQDParameters
 import numpy as np
 from scipy.linalg import eigh
 gOrtho = 10
-U0 = 8.5
-U1 = 0.1
-Ei = 8.0
-bx = 0.179
+U0 = 10
+U1 = 5.0
+Ei = 15
+bx = 1.35
 fixedParameters = {
-            DQDParameters.B_FIELD.value: 0.20,
+            DQDParameters.B_FIELD.value: 1.50,
             DQDParameters.B_PARALLEL.value: bx,
             DQDParameters.E_I.value: Ei,
-            DQDParameters.T.value: 0.004,
-            DQDParameters.DELTA_SO.value: 0.06,
+            DQDParameters.T.value: 0.4,
+            DQDParameters.DELTA_SO.value: 0.1,
             DQDParameters.DELTA_KK.value: 0.02,
             DQDParameters.T_SOC.value: 0.0,
             DQDParameters.U0.value: U0,
@@ -26,7 +26,7 @@ fixedParameters = {
             DQDParameters.G_0Z.value: 2 * gOrtho / 3,
             DQDParameters.GS.value: 2,
             DQDParameters.GSLFACTOR.value: 1.0,
-            DQDParameters.GV.value: 20.0,
+            DQDParameters.GV.value: 28.0,
             DQDParameters.GVLFACTOR.value: 0.66,
             DQDParameters.A.value: 0.1,
             DQDParameters.P.value: 0.02,

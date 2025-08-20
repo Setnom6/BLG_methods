@@ -9,16 +9,16 @@ import numpy as np
 # We have first to define the parameters of the BLG DQD we want to simulate
 
 gOrtho = 10
-U0 = 8.5
-U1 = 0.1
-Ei = 8.25
-bx = 0.179
+U0 = 10
+U1 = 5.0
+Ei = 2.25
+bx = 1.35
 fixedParameters = {
-            DQDParameters.B_FIELD.value: 0.20,
+            DQDParameters.B_FIELD.value: 1.50,
             DQDParameters.B_PARALLEL.value: bx,
             DQDParameters.E_I.value: Ei,
-            DQDParameters.T.value: 0.004,
-            DQDParameters.DELTA_SO.value: 0.06,
+            DQDParameters.T.value: 0.4,
+            DQDParameters.DELTA_SO.value: -0.04,
             DQDParameters.DELTA_KK.value: 0.02,
             DQDParameters.T_SOC.value: 0.0,
             DQDParameters.U0.value: U0,
@@ -30,7 +30,7 @@ fixedParameters = {
             DQDParameters.G_0Z.value: 2 * gOrtho / 3,
             DQDParameters.GS.value: 2,
             DQDParameters.GSLFACTOR.value: 1.0,
-            DQDParameters.GV.value: 20.0,
+            DQDParameters.GV.value: 28.0,
             DQDParameters.GVLFACTOR.value: 0.66,
             DQDParameters.A.value: 0.1,
             DQDParameters.P.value: 0.02,
@@ -48,7 +48,7 @@ plottingOptions = {
     PlotParameters.EXTRA_FOLDER: "",
     PlotParameters.SPECIAL_TITLE: None,
     PlotParameters.PARAM_TO_ITER: DQDParameters.E_I,
-    PlotParameters.ARRAY: np.linspace(6.0, 12.0, 1000),
+    PlotParameters.ARRAY: np.linspace(0.0*U0, 1.5*U0, 1000),
     PlotParameters.BASIS: BasisToProject.SINGLET_TRIPLET_REORDERED_BASIS,
     PlotParameters.Y_LIMS: None
 }

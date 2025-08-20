@@ -1,45 +1,66 @@
-from DynamicsManager import DynamicsManager, DQDParameters
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from src.DynamicsManager import DynamicsManager, DQDParameters
 import numpy as np
 import matplotlib.pyplot as plt
 
 
 gOrtho = 10
-U0 = 8.5
-U1 = 0.1
-Ei = 8.25
-bx = 0.179
 fixedParameters = {
-            DQDParameters.B_FIELD.value: 0.20,
-            DQDParameters.B_PARALLEL.value: bx,
-            DQDParameters.E_I.value: Ei,
-            DQDParameters.T.value: 0.004,
-            DQDParameters.DELTA_SO.value: 0.06,
-            DQDParameters.DELTA_KK.value: 0.02,
-            DQDParameters.T_SOC.value: 0.0,
-            DQDParameters.U0.value: U0,
-            DQDParameters.U1.value: U1,
-            DQDParameters.X.value: 0.02,
-            DQDParameters.G_ORTHO.value: gOrtho,
-            DQDParameters.G_ZZ.value: 10 * gOrtho,
-            DQDParameters.G_Z0.value: 2 * gOrtho / 3,
-            DQDParameters.G_0Z.value: 2 * gOrtho / 3,
-            DQDParameters.GS.value: 2,
-            DQDParameters.GSLFACTOR.value: 1.0,
-            DQDParameters.GV.value: 20.0,
-            DQDParameters.GVLFACTOR.value: 0.66,
-            DQDParameters.A.value: 0.1,
-            DQDParameters.P.value: 0.02,
-            DQDParameters.J.value: 0.00075 / gOrtho,
-}
+                DQDParameters.B_FIELD.value: 1.50,
+                DQDParameters.B_PARALLEL.value: 0.1147,
+                DQDParameters.E_I.value: 3.1739,
+                DQDParameters.T.value: 0.4,
+                DQDParameters.DELTA_SO.value: -0.04,
+                DQDParameters.DELTA_KK.value: 0.02,
+                DQDParameters.T_SOC.value: 0.0,
+                DQDParameters.U0.value: 10,
+                DQDParameters.U1.value: 5,
+                DQDParameters.X.value: 0.02,
+                DQDParameters.G_ORTHO.value: gOrtho,
+                DQDParameters.G_ZZ.value: 10 * gOrtho,
+                DQDParameters.G_Z0.value: 2 * gOrtho / 3,
+                DQDParameters.G_0Z.value: 2 * gOrtho / 3,
+                DQDParameters.GS.value: 2,
+                DQDParameters.GSLFACTOR.value: 1.0,
+                DQDParameters.GV.value: 28.0,
+                DQDParameters.GVLFACTOR.value: 0.66,
+                DQDParameters.A.value: 0.1,
+                DQDParameters.P.value: 0.02,
+                DQDParameters.J.value: 0.00075 / gOrtho,
+    }
 
 DM = DynamicsManager(fixedParameters)
 
-intervalTimes = [6, 5.5, 1, 4] # First solpe, anticrossingn plateau, second slope, final plateau in ns
-totalPoints = 1200
+intervalTimes = [6, 12.7165, 1, 6] # First solpe, anticrossingn plateau, second slope, final plateau in ns
+totalPoints = 300
+runOptions = DM.getRunOptions(atol=1e-5, rtol=1e-3, nsteps=10000)
+dephasing = None
+spinRelaxation = None
+cutOffN = None
+filter = False
 
-populations, tlistNano, eiValues = DM.detuningProtocol(intervalTimes, totalPoints, filter=False, dephasing=0.01)
+tlistNano, eiValues = DM.obtainOriginalProtocolParameters(intervalTimes, totalPoints)
+populations = DM.detuningProtocol(tlistNano, eiValues, filter=filter, dephasing=dephasing, spinRelaxation=spinRelaxation, cutOffN=cutOffN, runOptions=runOptions)
 
 fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, sharex=True, figsize=(10, 10), height_ratios=[3, 1, 1])
+
+title = "Population dynamics"
+
+if cutOffN is not None:
+    title += f" (cutOff for {cutOffN} states)"
+else:
+    title += " (SWT)"
+
+if dephasing is not None:
+    if spinRelaxation is not None:
+        title += f" with dephasing {dephasing} and spin relaxation {spinRelaxation}"
+    else:
+        title += f" with dephasing {dephasing}"
+else:
+    if spinRelaxation is not None:
+        title += f" with spin relaxation {spinRelaxation}"
 
 # Individual populations
 statesToPlot = [DM.correspondence[i] for i in range(5)]

@@ -4,9 +4,9 @@ import imageio.v2 as imageio
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
-base_name = "Heatmap"
+base_name = "Projection"
 extension = ".png"
-output_video = os.path.join(current_dir, "figures", "heatmap.mp4")
+output_video = os.path.join(current_dir, "figures", "gOrthoEvo.mp4")
 fps = 2
 
 pattern = os.path.join(current_dir, "figures", "forVideo", f"{base_name}*{extension}")

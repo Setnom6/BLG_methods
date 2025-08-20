@@ -10,6 +10,8 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 from detuning_protocol.realistic_signal import *
 from src.LindblandOperator import LindbladOperator
+import numpy as np
+from qutip import Qobj, mesolve, Options
 
 class DynamicsManager:
 
@@ -22,7 +24,8 @@ class DynamicsManager:
         self.fixedParameters = fixedParameters
         self.figuresDir = os.path.join(os.getcwd(), "DQD_2particles_1orbital_methods", "figures")
 
-    def simpleTimeEvolution(self, timesNs,  initialState: np.ndarray = None, cutOffN = None, dephasing = None):
+    def simpleTimeEvolution(self, timesNs,  initialState: np.ndarray = None, cutOffN = None, dephasing = None, spinRelaxation = None):
+
         initialStateQobj = self.obtainInitialGroundState(cutOffN=cutOffN)
         if initialState is not None:
             initialStateQobj = Qobj(initialState)
@@ -33,46 +36,31 @@ class DynamicsManager:
 
         collapseOps = []
         if dephasing is not None:
-            collapseOps = self._getProjectedDephasingOperators(dephasing)
+            collapseOps.extend(self._getProjectedDephasingOperators(dephasing))
+
+        if spinRelaxation is not None:
+            collapseOps.extend(self._getProjectedSpinRelaxationOperators(spinRelaxation))
 
         if cutOffN is not None:
             hEff = H_full[:cutOffN, :cutOffN]
             collapseOpsEff = [op[:cutOffN, :cutOffN] for op in collapseOps]
         else:
             hEff, collapseOpsEff = self.schriefferWolff(H_full, collapseOps)
+        
+        # Convert to Qobj
         hEffQobj = Qobj(hEff)
         collapseOpsEffQObj = [Qobj(op) for op in collapseOpsEff]
 
         result = mesolve(hEffQobj, initialStateQobj, timesMeV, c_ops=collapseOpsEffQObj)
         return np.array([state.diag() for state in result.states]) # We keep the populations
-    
 
-    def detuningProtocol(self, intervalTimes, totalPoints, cutOffN=None, filter=False, dephasing = None):
+
+    def detuningProtocol(self, tlistNano, eiValues, cutOffN=None, filter=False, dephasing = None, spinRelaxation = None, runOptions=None):
         """
-        Build a realistic detuning pulse for a bilayer graphene double quantum dot with 2 electrons.
-        Includes slew rate limit, multi-stage RC filtering, ringing, delay, DAC quantization, and Gaussian noise.
+        Executes a detuning protocol bein agnostic to the sweep shape.
         """
-        # --- Time arrays ---
-        tTotal = sum(intervalTimes)
-        nValues = [int(intervalTimes[i] * totalPoints / tTotal) for i in range(4)]
-        tlistNano = np.concatenate([
-            np.linspace(0, intervalTimes[0], nValues[0], endpoint=False),
-            np.linspace(intervalTimes[0], intervalTimes[0] + intervalTimes[1], nValues[1], endpoint=False),
-            np.linspace(intervalTimes[0] + intervalTimes[1], intervalTimes[0] + intervalTimes[1] + intervalTimes[2], nValues[2], endpoint=False),
-            np.linspace(intervalTimes[0] + intervalTimes[1] + intervalTimes[2], tTotal, nValues[3])
-        ])
+        # --- Convert times to meV
         tlist = self.nsToMeV * tlistNano
-
-        # --- Ideal detuning values ---
-        eiIntervals = [0.0,
-                    self.fixedParameters[DQDParameters.E_I.value],
-                    2.0 * self.fixedParameters[DQDParameters.U0.value]]
-        eiValues = np.concatenate([
-            np.linspace(eiIntervals[0], eiIntervals[1], nValues[0], endpoint=False),
-            np.full(nValues[1], eiIntervals[1]),
-            np.linspace(eiIntervals[1], eiIntervals[2], nValues[2]),
-            np.full(nValues[3], eiIntervals[2])
-        ])
 
         # --- Initial state ---
         rho0 = self.obtainInitialGroundState(cutOffN=cutOffN)
@@ -108,7 +96,10 @@ class DynamicsManager:
         # Get collapse operators which are the same for any detuning
         collapseOps = []
         if dephasing is not None:
-            collapseOps = self._getProjectedDephasingOperators(dephasing)
+            collapseOps.extend(self._getProjectedDephasingOperators(dephasing))
+
+        if spinRelaxation is not None:
+            collapseOps.extend(self._getProjectedSpinRelaxationOperators(spinRelaxation))
 
         if cutOffN is not None:
             collapseOpsEff = [op[:cutOffN, :cutOffN] for op in collapseOps]
@@ -116,11 +107,46 @@ class DynamicsManager:
             _, collapseOpsEff = self.schriefferWolff(H_full, collapseOps)
         collapseOpsEffQObj = [Qobj(op) for op in collapseOpsEff]
 
-        
         # === Solve dynamics ===
-        result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=collapseOpsEffQObj)
-        return np.array([state.diag() for state in result.states]), tlistNano, eiValues
+        result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=collapseOpsEffQObj, options=runOptions)
+        return np.array([state.diag() for state in result.states])
     
+    def obtainOriginalProtocolParameters(self, intervalTimes, totalPoints):
+        """
+        Original protocol is composed of a first sweep from 0 to the interaction detuning E, 
+        then a plateau at the anticrossing point, a second sweep (quick or slow) to 2*E and finally a plateau at 2*E.
+        """
+        tTotal = sum(intervalTimes)
+        nValues = [int(intervalTimes[i] * totalPoints / tTotal) for i in range(4)]
+        tlistNano = np.concatenate([
+            np.linspace(0, intervalTimes[0], nValues[0], endpoint=False),
+            np.linspace(intervalTimes[0], intervalTimes[0] + intervalTimes[1], nValues[1], endpoint=False),
+            np.linspace(intervalTimes[0] + intervalTimes[1], intervalTimes[0] + intervalTimes[1] + intervalTimes[2], nValues[2], endpoint=False),
+            np.linspace(intervalTimes[0] + intervalTimes[1] + intervalTimes[2], tTotal, nValues[3])
+        ])
+
+        eiIntervals = [0.0,
+                    self.fixedParameters[DQDParameters.E_I.value],
+                    2.0 * self.fixedParameters[DQDParameters.U0.value]]
+        eiValues = np.concatenate([
+            np.linspace(eiIntervals[0], eiIntervals[1], nValues[0], endpoint=False),
+            np.full(nValues[1], eiIntervals[1]),
+            np.linspace(eiIntervals[1], eiIntervals[2], nValues[2]),
+            np.full(nValues[3], eiIntervals[2])
+        ])
+
+        return tlistNano, eiValues
+    
+    def getRunOptions(self, atol = 1e-5, rtol = 1e-3, nsteps = 10000):
+        """
+        Returns the options for the mesolve function.
+        """
+        return Options(
+            nsteps=nsteps,
+            atol=atol,
+            rtol=rtol,
+            method='bdf'
+            )
     
     def getCurrent(self, populations):
         I_t = []
@@ -186,8 +212,21 @@ class DynamicsManager:
         """
         LM = LindbladOperator(self.dqd.FSU)
         listOfOperators = []
-        for i in range(len(self.basis)):
+        for i in range(8):
             Li = LM.buildDephasingOperator(i)
+            Li_proj = gamma * self.dqd.project_hamiltonian(self.basis, alternative_operator=Li)
+            listOfOperators.append(Li_proj)
+        return listOfOperators
+    
+    def _getProjectedSpinRelaxationOperators(self, gamma = 0.01):
+        """
+        Returns the spin relaxation operators projected onto the singlet-triplet basis.
+        """
+        LM = LindbladOperator(self.dqd.FSU)
+        listOfOperators = []
+        spinTuples = [(1,0), (3,2), (5,4), (7,6)]
+        for tuple in spinTuples:
+            Li = LM.buildDecoherenceOperator(tuple[0], tuple[1])
             Li_proj = gamma * self.dqd.project_hamiltonian(self.basis, alternative_operator=Li)
             listOfOperators.append(Li_proj)
         return listOfOperators
@@ -230,7 +269,7 @@ class DynamicsManager:
         if collapseOp is not None:
             for operator in collapseOp:
                 operator_proj = operator[:N0+N1, :N0+N1]  # Project the operator onto the subspace
-                if np.allclose(operator_proj, 0, atol=1e-12):
+                if np.allclose(np.abs(operator_proj), 0, atol=1e-12):
                     continue
                 operator_series = operator_to_BlockSeries(
                         [np.diag(np.diag(operator_proj)), operator_proj-np.diag(np.diag(operator_proj))], hermitian=True, subspace_indices=subspace_indices)
@@ -240,7 +279,6 @@ class DynamicsManager:
                     operator_eff = np.ma.sum(operator_tilde[:2, :2, :3], axis=2)
                 except:
                     operator_eff = np.ma.sum(operator_tilde[:2, :2, :2], axis=2)
-
                 collapseOpReturn.append(operator_eff[0,0])
 
         return transformed_H[0, 0], collapseOpReturn
@@ -288,7 +326,7 @@ class DynamicsManager:
 
 
 
-    def detuningProtocolAlternative2(self, intervalTimes, totalPoints, cutOffN = None):
+    def obtainAlternativeProtocol2Parameters(self, intervalTimes, totalPoints):
         """
         Same protocol as the original but the anticrossing region is not a plateao but an slowly increasing function.
         It allows to leave the anticrossing point smoothly.
@@ -303,8 +341,6 @@ class DynamicsManager:
         np.linspace(intervalTimes[0] + intervalTimes[1] + intervalTimes[2], tTotal, nValues[3])
         ])
 
-        tlist = self.nsToMeV * tlistNano
-
         eiIntervals = []
         eiIntervals.append(0.0)
         eiIntervals.append(self.fixedParameters[DQDParameters.E_I.value]*0.98) # The start and end point of the anticrossing can be stretched or ennahced here
@@ -318,31 +354,9 @@ class DynamicsManager:
         np.full(nValues[3], eiIntervals[3])
         ])
 
-        rho0 = self.obtainInitialGroundState(cutOffN=cutOffN)
-
-        # === Precompute effective Hamiltonians ===
-        hEffList = []
-        for ei in eiValues:
-            params = self.fixedParameters.copy()
-            params[DQDParameters.E_I.value] = ei
-
-            H_full = self._getProjecteHamiltonian(params)
-            if cutOffN is not None:
-                H00_eff = H_full[:cutOffN, :cutOffN]
-            else:
-                H00_eff = self.schriefferWolff(H_full)
-            H00_eff_qobj = Qobj(H00_eff)
-            hEffList.append(H00_eff_qobj)
-
-        def hEffTimeDependent(t, args):
-            idx = np.argmin(np.abs(tlist - t))
-            return hEffList[idx]
-        
-
-        result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=[])
-        return np.array([state.diag() for state in result.states]), tlistNano, eiValues
+        return tlistNano, eiValues
     
-    def detuningProtocolAlternative3(self, intervalTimes, totalPoints, cutOffN = None):
+    def obtainAlternativeProtocol2Parameters(self, intervalTimes, totalPoints):
         """
         The detuning sweep starts with an slope from 0 to the anticrossing center.
         Then stays in that point for the desired time for rabi oscillations
@@ -358,8 +372,6 @@ class DynamicsManager:
         np.linspace(intervalTimes[0] + intervalTimes[1] + intervalTimes[2], tTotal, nValues[3])
         ])
 
-        tlist = self.nsToMeV * tlistNano
-
         eiIntervals = []
         eiIntervals.append(0.0)
         eiIntervals.append(self.fixedParameters[DQDParameters.E_I.value])
@@ -371,29 +383,7 @@ class DynamicsManager:
         np.full(nValues[3], eiIntervals[0])
         ])
 
-        rho0 = self.obtainInitialGroundState(cutOffN=cutOffN)
-
-        # === Precompute effective Hamiltonians ===
-        hEffList = []
-        for ei in eiValues:
-            params = self.fixedParameters.copy()
-            params[DQDParameters.E_I.value] = ei
-
-            H_full = self._getProjecteHamiltonian(params)
-            if cutOffN is not None:
-                H00_eff = H_full[:cutOffN, :cutOffN]
-            else:
-                H00_eff = self.schriefferWolff(H_full)
-            H00_eff_qobj = Qobj(H00_eff)
-            hEffList.append(H00_eff_qobj)
-
-        def hEffTimeDependent(t, args):
-            idx = np.argmin(np.abs(tlist - t))
-            return hEffList[idx]
-        
-
-        result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=[])
-        return np.array([state.diag() for state in result.states]), tlistNano, eiValues
+        return tlistNano, eiValues
     
 
     

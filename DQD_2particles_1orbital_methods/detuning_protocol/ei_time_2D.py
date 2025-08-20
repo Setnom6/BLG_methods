@@ -1,4 +1,7 @@
-from DynamicsManager import DynamicsManager, DQDParameters
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from src.DynamicsManager import DynamicsManager, DQDParameters
 import numpy as np
 import matplotlib.pyplot as plt
 import logging
@@ -22,11 +25,11 @@ def setupLogger():
             ]
         )
 
-def runDynamics(detuning, parameters, times):
+def runDynamics(detuning, parameters, times, cutOffN, dephasing, spinRelaxation):
         params = deepcopy(parameters)
         params[DQDParameters.E_I.value] = detuning
         DM = DynamicsManager(params)
-        populations =  DM.simpleTimeEvolution(times)
+        populations =  DM.simpleTimeEvolution(times, cutOffN=cutOffN, dephasing=dephasing, spinRelaxation=spinRelaxation)
         return DM.getCurrent(populations)
 
 
@@ -64,6 +67,10 @@ if __name__ == "__main__":
 
     maxTime = 2.5
     totalPoints = 300
+    cutOffN = None
+    dephasing = None
+    spinRelaxation = None
+
     detuningList = np.linspace(7.5, 9.5, totalPoints)
     bxList = np.array([0.179])
 
@@ -79,7 +86,7 @@ if __name__ == "__main__":
         parameters = deepcopy(fixedParameters)
         parameters[DQDParameters.B_PARALLEL.value] = bx
         currents = Parallel(n_jobs=numCores)(
-            delayed(runDynamics)(detuning, parameters, timesNs)
+            delayed(runDynamics)(detuning, parameters, timesNs, cutOffN, dephasing, spinRelaxation)
             for detuning in detuningList
         )
 
@@ -94,9 +101,23 @@ if __name__ == "__main__":
         plt.colorbar(im, label="I (no Pauli Blockade)")
         plt.xlabel("Time (ns)")
         plt.ylabel("E_i (meV)")
-        plt.title(f"Current vs detuning and interaction time for SWT, " + 
-                f"bx = {parameters[DQDParameters.B_PARALLEL.value]:.3f} T, bz = {parameters[DQDParameters.B_FIELD.value]:.3f} T")
-        
+
+        title = "Current vs detuning and interaction time"
+        if cutOffN is not None:
+            title += f" for {cutOffN} first states"
+        else:
+            title += " for SWT"
+
+        if dephasing is not None:
+            if spinRelaxation is not None:
+                title += f", dephasing = {dephasing}, spin relaxation = {spinRelaxation}"
+            else:
+                title += f", dephasing = {dephasing}"
+        else:
+            if spinRelaxation is not None:
+                title += f", spin relaxation = {spinRelaxation}"
+
+        plt.title(title)
         DM = DynamicsManager(parameters)
         DM.saveResults(name="rabi_2D_ei")
         logging.info(f"Simulation {idx+1}/{len(bxList)} completed.\n")

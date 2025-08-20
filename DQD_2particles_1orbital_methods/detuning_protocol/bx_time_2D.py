@@ -1,4 +1,7 @@
-from DynamicsManager import DynamicsManager, DQDParameters
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from src.DynamicsManager import DynamicsManager, DQDParameters
 import numpy as np
 import matplotlib.pyplot as plt
 import logging
