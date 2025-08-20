@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 gOrtho = 10
 fixedParameters = {
                 DQDParameters.B_FIELD.value: 1.50,
-                DQDParameters.B_PARALLEL.value: 0.1147,
-                DQDParameters.E_I.value: 3.1739,
+                DQDParameters.B_PARALLEL.value: 0.1586,
+                DQDParameters.E_I.value: 3.1839,
                 DQDParameters.T.value: 0.4,
                 DQDParameters.DELTA_SO.value: -0.04,
                 DQDParameters.DELTA_KK.value: 0.02,
@@ -33,11 +33,11 @@ fixedParameters = {
 
 DM = DynamicsManager(fixedParameters)
 
-intervalTimes = [6, 12.7165, 1, 6] # First solpe, anticrossingn plateau, second slope, final plateau in ns
-totalPoints = 300
-runOptions = DM.getRunOptions(atol=1e-5, rtol=1e-3, nsteps=10000)
+intervalTimes = [10, 13.1523, 3, 10] # First solpe, anticrossingn plateau, second slope, final plateau in ns
+totalPoints = 1200
+runOptions = DM.getRunOptions(atol=1e-8, rtol=1e-6, nsteps=10000)
 dephasing = None
-spinRelaxation = None
+spinRelaxation = 0.01
 cutOffN = None
 filter = False
 
@@ -68,7 +68,7 @@ for label in statesToPlot:
     index = DM.invCorrespondence[label]
     ax1.plot(tlistNano, populations[:, index], label=label)
 ax1.set_ylabel('Population')
-ax1.set_title('Population dynamics (SWT with detuning sweep)')
+ax1.set_title(title)
 ax1.legend(loc='center left', bbox_to_anchor=(1.05, 0.5))
 ax1.grid()
 

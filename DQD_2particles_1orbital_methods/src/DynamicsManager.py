@@ -269,7 +269,7 @@ class DynamicsManager:
         if collapseOp is not None:
             for operator in collapseOp:
                 operator_proj = operator[:N0+N1, :N0+N1]  # Project the operator onto the subspace
-                if np.allclose(np.abs(operator_proj), 0, atol=1e-12):
+                if np.allclose(np.abs(operator_proj), 0, atol=1e-10):
                     continue
                 operator_series = operator_to_BlockSeries(
                         [np.diag(np.diag(operator_proj)), operator_proj-np.diag(np.diag(operator_proj))], hermitian=True, subspace_indices=subspace_indices)
@@ -279,7 +279,11 @@ class DynamicsManager:
                     operator_eff = np.ma.sum(operator_tilde[:2, :2, :3], axis=2)
                 except:
                     operator_eff = np.ma.sum(operator_tilde[:2, :2, :2], axis=2)
+
+                if np.ma.is_masked(operator_eff) or np.all(operator_eff.mask):
+                    continue
                 collapseOpReturn.append(operator_eff[0,0])
+
 
         return transformed_H[0, 0], collapseOpReturn
     

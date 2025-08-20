@@ -12,6 +12,7 @@ from copy import deepcopy
 import time
 from scipy.fft import fft, fftfreq
 
+# ---------------- logger ----------------
 def setupLogger():
         DM = DynamicsManager({})
         logDir = DM.figuresDir
@@ -27,6 +28,7 @@ def setupLogger():
             ]
         )
 
+# ---------------- dynamics ----------------
 def runDynamics(detuning, parameters, times, cutOffN, dephasing, spinRelaxation):
         params = deepcopy(parameters)
         params[DQDParameters.E_I.value] = detuning
@@ -34,6 +36,8 @@ def runDynamics(detuning, parameters, times, cutOffN, dephasing, spinRelaxation)
         populations =  DM.simpleTimeEvolution(times, cutOffN=cutOffN, dephasing=dephasing, spinRelaxation=spinRelaxation)
         return DM.getCurrent(populations)
 
+
+# ---------------- freq estimation ----------------
 def estimateRabiFrequency(signal, times, paddingFactor=4):
     """
     Estimates the dominant Rabi frequency in a 1D signal (currents vs time)
@@ -65,21 +69,26 @@ def estimateRabiFrequency(signal, times, paddingFactor=4):
 
     return dominantFreq  # in 1/ns
 
+def computeFreqsForDetuningSweep(currents, detuningList, times):
+    """
+    Finds the Rabi frequencies for each detuning in a 2D current matrix.
+    """
+    n = len(detuningList)
+    freqs = np.zeros(n)
+    maxCurrents = np.zeros(n)
+    for i in range(n):
+        signal = currents[i, :]
+        freqs[i] = estimateRabiFrequency(signal, times)
+        maxCurrents[i] = np.max(np.abs(signal))
+    return freqs, maxCurrents
+
+# ---------------- detuning analysis for minimal Rabi frequency ----------------
 def findCentralDetuning(currents, detuningList, times, minCurrentFraction=0.05):
     """
     Finds the detuning value where the Rabi frequency is minimized.
     """
-    freqsNs = []
-    maxCurrents = []
 
-    for i in range(len(detuningList)):
-        signal = currents[i, :]
-        freq = estimateRabiFrequency(signal, times)  # in 1/ns
-        freqsNs.append(freq)
-        maxCurrents.append(np.max(np.abs(signal)))
-
-    freqsNs = np.array(freqsNs)
-    maxCurrents = np.array(maxCurrents)
+    freqsNs, maxCurrents = computeFreqsForDetuningSweep(currents, detuningList, times)
     currentThreshold = minCurrentFraction * np.max(maxCurrents)
 
     # Sort indices by increasing frequency
@@ -96,6 +105,45 @@ def findCentralDetuning(currents, detuningList, times, minCurrentFraction=0.05):
 
     return detuningList[bestIndex], freqsNs[bestIndex], freqsNs
 
+# ---------------- sweet spots ----------------
+
+def findSweetSpotsFromFreqs(currents, detuningList, times, minCurrentFraction=0.05, relGradThreshold=0.1):
+    """
+    Finds sweet spots in the detuning sweep based on frequency gradients.
+    """
+    freqs, maxCurrents = computeFreqsForDetuningSweep(currents, detuningList, times)
+    grads = np.gradient(freqs, detuningList)
+    absGrads = np.abs(grads)
+    maxAbsGrad = np.max(absGrads) if np.max(absGrads) > 0 else 1.0
+    gradMask = absGrads <= relGradThreshold * maxAbsGrad
+    currentThreshold = minCurrentFraction * np.max(maxCurrents)
+    currentMask = maxCurrents >= currentThreshold
+    combinedMask = gradMask & currentMask
+    sweetIndices = np.where(combinedMask)[0]
+    if len(sweetIndices) == 0:
+        minIdx = np.argmin(absGrads)
+        sweetIndices = np.array([minIdx])
+    return sweetIndices, grads
+
+def computeDephasingRateFromGradient(grads, sigmaEpsilon):
+    return (grads ** 2) * (sigmaEpsilon ** 2)
+
+# MonteCarlo con paralelización
+def monteCarloFreqVarianceAtDetuning(detuningValue, parameters, times, cutOffN, dephasing, spinRelaxation,
+                                     nSamples=200, sigmaEpsilon=0.01):
+    def singleSample():
+        epsSample = detuningValue + np.random.normal(0, sigmaEpsilon)
+        params = deepcopy(parameters)
+        params[DQDParameters.E_I.value] = epsSample
+        DM = DynamicsManager(params)
+        pops = DM.simpleTimeEvolution(times, cutOffN=cutOffN, dephasing=dephasing, spinRelaxation=spinRelaxation)
+        sig = DM.getCurrent(pops)
+        return estimateRabiFrequency(sig, times)
+    numCores = min(cpu_count(), 16)
+    freqs = Parallel(n_jobs=numCores)(delayed(singleSample)() for _ in range(nSamples))
+    return np.mean(freqs), np.var(freqs)
+
+# ---------------- frequency formatting ----------------
 def formatFrequencies(freqsGHz):
     """
     Selects an appropriate prefix (Hz, kHz, MHz, GHz) and scales the frequencies.
@@ -150,10 +198,10 @@ if __name__ == "__main__":
     dephasing = None
     spinRelaxation = None
 
-    detuningList = np.linspace(2.0, 7.0, totalPoints)
+    detuningList = np.linspace(3.0, 4.0, totalPoints)
 
-    parameterToChange = DQDParameters.t.value
-    arrayOfParameters = np.linspace(0.0001, 0.5, 20)
+    parameterToChange = DQDParameters.B_PARALLEL.value
+    arrayOfParameters = np.linspace(0.001, 0.5, 20)
 
     timesNs = np.linspace(0, maxTime, totalPoints)
 
@@ -164,8 +212,8 @@ if __name__ == "__main__":
     logging.info(f"Using {numCores} cores with joblib.")
 
     symmetryAxes = []
-    rabiFreqs = []
-    rabiPeriods = []
+    rabiFreqs_sym = []
+    rabiPeriods_sym = []
     for idx, value in enumerate(arrayOfParameters):
         parameters = deepcopy(fixedParameters)
         parameters[parameterToChange] = value
@@ -207,27 +255,61 @@ if __name__ == "__main__":
         plt.title(title)
 
         DM = DynamicsManager(parameters)
-        DM.saveResults(name="rabi_2D_ei")
 
-        symDetuning, rabiFreq, _ = findCentralDetuning(currents, detuningList, timesNs)
-        symmetryAxes.append((value, symDetuning))
-        rabiFreqs.append((value, rabiFreq))
-        rabiPeriods.append((value, 1 / rabiFreq)) 
+        symDetuning, rabiFreq, freqsNs = findCentralDetuning(currents, detuningList, timesNs)
+        sweetIndices, grads = findSweetSpotsFromFreqs(currents, detuningList, timesNs)
+        symmetryAxes.append(symDetuning)
+
+        plt.axhline(symDetuning, color='red', linestyle='--', label=f"Central detuning: {symDetuning:.4f} meV")
+        rabiFreqs_sym.append(rabiFreq)
+        rabiPeriods_sym.append(1.0 / rabiFreq) 
         logging.info(f"Central detuning (slowest Rabi) = {symDetuning:.4f} for {parameterToChange} = {value:.4f}")
         logging.info(f"Rabi frequency = {rabiFreq:.4f} 1/ns for {parameterToChange} = {value:.4f}")
         logging.info(f"Rabi period = {1/rabiFreq:.4f} ns for {parameterToChange} = {value:.4f}")
 
         logging.info(f"Simulation {idx+1}/{len(arrayOfParameters)} completed.\n")
+
+        plt.legend()
+        DM.saveResults(name="rabi_2D_ei")
         plt.close()
+
+        # Sweet spots analysis
+
+        fig, ax1 = plt.subplots(figsize=(7,4))
+
+        ax1.plot(detuningList, freqsNs, 'o-', label='Rabi freq (1/ns)', color='tab:blue', markersize = 5)
+        ax1.scatter(detuningList[sweetIndices], freqsNs[sweetIndices], c='red', zorder=5, s = 5, label='sweet spots')
+        ax1.axvline(symDetuning, color='green', linestyle='--', label=f"Central detuning: {symDetuning:.4f} meV")
+        ax1.set_xlabel('E_i (meV)')
+        ax1.set_ylabel('Frequency (1/ns)', color='tab:blue')
+        ax1.tick_params(axis='y', labelcolor='tab:blue')
+        ax1.grid(True)
+
+        ax2 = ax1.twinx()
+        ax2.plot(detuningList, np.abs(grads), 'o-', label='|df/dε|', color='tab:orange', markersize = 5)
+        ax2.scatter(detuningList[sweetIndices], np.abs(grads)[sweetIndices], s = 5, c='red', zorder=4)
+        ax2.set_ylabel('|df/dε| (1/ns per meV)', color='tab:orange')
+        ax2.set_yscale('log')
+        ax2.tick_params(axis='y', labelcolor='tab:orange')
+
+        lines_1, labels_1 = ax1.get_legend_handles_labels()
+        lines_2, labels_2 = ax2.get_legend_handles_labels()
+        ax2.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper right')
+
+        plt.title(f'Rabi frequency and sensitivity vs detuning for {parameterToChange} = {value:.4f}')
+        plt.tight_layout()
+        plt.savefig(os.path.join(DM.figuresDir, f"freq_and_sensitivity_vs_detuning_{value:.4f}.png"))
+        plt.close()
+
         time.sleep(0.1)
     
 
     # --- Finalmente: graficar resultado eje vs bx
 
-    rabiFreqs = np.array(rabiFreqs)
-    freqsScaled, unit = formatFrequencies(rabiFreqs[:,1])
+    rabiFreqs_sym = np.array(rabiFreqs_sym)
+    freqsScaled, unit = formatFrequencies(rabiFreqs_sym)
     plt.figure(figsize=(8, 5))
-    plt.plot(rabiFreqs[:,0], rabiFreqs[:,1], "o-", label="Rabi frequency")
+    plt.plot(arrayOfParameters, rabiFreqs_sym, "o-", label="Rabi frequency central detuning")
     plt.xlabel(f"{parameterToChange}")
     plt.ylabel(f"Frequency ({unit})")
     plt.title("Rabi frequency vs {parameterToChange}")
@@ -238,9 +320,9 @@ if __name__ == "__main__":
     plt.savefig(figPath)
     plt.close()
 
-    periodsNs = np.array(rabiPeriods)[:,1]
+    periodsNs_sym = np.array(rabiPeriods_sym)
     plt.figure(figsize=(8,5))
-    plt.plot(rabiPeriods[:,0], periodsNs, "o-", label="Rabi period")
+    plt.plot(arrayOfParameters, periodsNs_sym, "o-", label="Rabi period central detuning")
     plt.xlabel(f"{parameterToChange}")
     plt.ylabel("Period (ns)")
     plt.title(f"Rabi period vs {parameterToChange}")
@@ -254,14 +336,14 @@ if __name__ == "__main__":
 
     symmetryAxes = np.array(symmetryAxes)
     plt.figure(figsize=(8, 5))
-    plt.plot(symmetryAxes[:,0], symmetryAxes[:,1], "o-", label="Detuning at interaction maxima")
+    plt.plot(arrayOfParameters, symmetryAxes, "o-", label="Detuning at interaction maxima (central detuning)")
     plt.xlabel(f"{parameterToChange}")
     plt.ylabel("Detuning (meV)")
     plt.title(f"Detuning at interaction maxima vs {parameterToChange}")
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    figPath = os.path.join(DM.figuresDir, f"symmetry_axis_vs_{parameterToChange}.png")
+    figPath = os.path.join(DM.figuresDir, f"detunings_vs_{parameterToChange}.png")
     plt.savefig(figPath)
     plt.close()
 
