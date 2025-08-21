@@ -36,10 +36,13 @@ DM = DynamicsManager(fixedParameters)
 intervalTimes = [10, 13.1523, 3, 10] # First solpe, anticrossingn plateau, second slope, final plateau in ns
 totalPoints = 1200
 runOptions = DM.getRunOptions(atol=1e-8, rtol=1e-6, nsteps=10000)
-dephasing = None
-spinRelaxation = 0.01
+T1 = 2e5  # Spin relaxation time in ns
+T2 = 1e4  # Dephasing time in ns
 cutOffN = None
 filter = False
+
+dephasing = DM.gammaDephasing(T2, T1)  # Dephasing and spin relaxation time in meV
+spinRelaxation = DM.gammaRelaxation(T1)  # Spin relaxation time in meV
 
 tlistNano, eiValues = DM.obtainOriginalProtocolParameters(intervalTimes, totalPoints)
 populations = DM.detuningProtocol(tlistNano, eiValues, filter=filter, dephasing=dephasing, spinRelaxation=spinRelaxation, cutOffN=cutOffN, runOptions=runOptions)

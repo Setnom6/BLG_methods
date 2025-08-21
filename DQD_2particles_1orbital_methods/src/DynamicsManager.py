@@ -214,7 +214,7 @@ class DynamicsManager:
         listOfOperators = []
         for i in range(8):
             Li = LM.buildDephasingOperator(i)
-            Li_proj = gamma * self.dqd.project_hamiltonian(self.basis, alternative_operator=Li)
+            Li_proj = np.sqrt(gamma) * self.dqd.project_hamiltonian(self.basis, alternative_operator=Li)
             listOfOperators.append(Li_proj)
         return listOfOperators
     
@@ -227,10 +227,27 @@ class DynamicsManager:
         spinTuples = [(1,0), (3,2), (5,4), (7,6)]
         for tuple in spinTuples:
             Li = LM.buildDecoherenceOperator(tuple[0], tuple[1])
-            Li_proj = gamma * self.dqd.project_hamiltonian(self.basis, alternative_operator=Li)
+            Li_proj = np.sqrt(gamma) * self.dqd.project_hamiltonian(self.basis, alternative_operator=Li)
             listOfOperators.append(Li_proj)
         return listOfOperators
     
+
+    def gammaRelaxation(self, t1_ns: float) -> float:
+        """Return gamma (in meV) for relaxation operator L = sqrt(gamma) * O, given T1 in ns."""
+        gamma_ns = 1.0 / t1_ns  # gamma in units of ns^{-1}
+        gamma_meV = gamma_ns / self.nsToMeV  # Convert to meV
+        return gamma_meV
+    
+
+    def gammaDephasing(self, t2_ns: float, t1_ns: float) -> float:
+        """Return gamma (in meV) for dephasing operator L = sqrt(gamma) * O, given T1 and T2 in ns."""
+        # Calculate gamma_dephasing in units of ns^{-1}
+        gamma_dephasing_ns = (1.0 / t2_ns) - (1.0 / (2 * t1_ns))
+        
+        # Convert to meV
+        gamma_dephasing_meV = gamma_dephasing_ns / self.nsToMeV
+        return gamma_dephasing_meV
+        
     def obtainInitialGroundState(self, detuning = None, cutOffN = None):
         parameters = deepcopy(self.fixedParameters)
         parameters[DQDParameters.E_I.value] = 0.0
