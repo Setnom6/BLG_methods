@@ -19,8 +19,8 @@ def gammaDephasing(t2Ns: float, t1Ns: float) -> float:
     return gamma_dephasing_meV
 
 
-dephasing = gammaDephasing(100000, 200000) # Dephasing and spin relaxation time in ns
-spinRelaxation = gammaRelaxation(200000)  # Spin relaxation time in ns
+dephasing = gammaDephasing(5000, 200) # Dephasing and spin relaxation time in ns
+spinRelaxation = gammaRelaxation(200)  # Spin relaxation time in ns
 
 
 print(f"Dephasing: {dephasing} meV, Spin Relaxation: {spinRelaxation} meV")

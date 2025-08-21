@@ -38,11 +38,20 @@ totalPoints = 1200
 runOptions = DM.getRunOptions(atol=1e-8, rtol=1e-6, nsteps=10000)
 T1 = 2e5  # Spin relaxation time in ns
 T2 = 1e4  # Dephasing time in ns
+activateDephasing = True
+activateSpinRelaxation = True
 cutOffN = None
 filter = False
 
-dephasing = DM.gammaDephasing(T2, T1)  # Dephasing and spin relaxation time in meV
-spinRelaxation = DM.gammaRelaxation(T1)  # Spin relaxation time in meV
+
+spinRelaxation = None
+dephasing = None
+if activateSpinRelaxation:
+    spinRelaxation = DM.gammaRelaxation(T1)  # Spin relaxation time in meV
+if activateDephasing:
+    dephasing = DM.gammaDephasing(T2, T1)  # Dephasing and spin relaxation time in meV
+    
+    
 
 tlistNano, eiValues = DM.obtainOriginalProtocolParameters(intervalTimes, totalPoints)
 populations = DM.detuningProtocol(tlistNano, eiValues, filter=filter, dephasing=dephasing, spinRelaxation=spinRelaxation, cutOffN=cutOffN, runOptions=runOptions)
@@ -56,14 +65,15 @@ if cutOffN is not None:
 else:
     title += " (SWT)"
 
-if dephasing is not None:
-    if spinRelaxation is not None:
-        title += f" with dephasing {dephasing} and spin relaxation {spinRelaxation}"
+if activateDephasing:
+    if activateSpinRelaxation:
+        title += f" with T1 {T1:.3e} ns and T2 {T2:.3e} ns (just dephasing)"
     else:
-        title += f" with dephasing {dephasing}"
+        title += f" with T1 {T1:.3e} ns and T2 {T2:.3e} ns"
+
 else:
-    if spinRelaxation is not None:
-        title += f" with spin relaxation {spinRelaxation}"
+    if activateSpinRelaxation:
+        title += f" with T1 {T1:.3e} ns (no dephasing)"
 
 # Individual populations
 statesToPlot = [DM.correspondence[i] for i in range(5)]

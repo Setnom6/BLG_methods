@@ -24,7 +24,7 @@ class DynamicsManager:
         self.fixedParameters = fixedParameters
         self.figuresDir = os.path.join(os.getcwd(), "DQD_2particles_1orbital_methods", "figures")
 
-    def simpleTimeEvolution(self, timesNs,  initialState: np.ndarray = None, cutOffN = None, dephasing = None, spinRelaxation = None):
+    def simpleTimeEvolution(self, timesNs,  initialState: np.ndarray = None, cutOffN = None, dephasing = None, spinRelaxation = None, runOptions=None):
 
         initialStateQobj = self.obtainInitialGroundState(cutOffN=cutOffN)
         if initialState is not None:
@@ -51,7 +51,7 @@ class DynamicsManager:
         hEffQobj = Qobj(hEff)
         collapseOpsEffQObj = [Qobj(op) for op in collapseOpsEff]
 
-        result = mesolve(hEffQobj, initialStateQobj, timesMeV, c_ops=collapseOpsEffQObj)
+        result = mesolve(hEffQobj, initialStateQobj, timesMeV, c_ops=collapseOpsEffQObj, options=runOptions)
         return np.array([state.diag() for state in result.states]) # We keep the populations
 
 

@@ -25,11 +25,11 @@ def setupLogger():
             ]
         )
 
-def runDynamics(detuning, parameters, times, cutOffN, dephasing, spinRelaxation):
+def runDynamics(detuning, parameters, times, cutOffN, dephasing, spinRelaxation, runOptions):
         params = deepcopy(parameters)
         params[DQDParameters.E_I.value] = detuning
         DM = DynamicsManager(params)
-        populations =  DM.simpleTimeEvolution(times, cutOffN=cutOffN, dephasing=dephasing, spinRelaxation=spinRelaxation)
+        populations =  DM.simpleTimeEvolution(times, cutOffN=cutOffN, dephasing=dephasing, spinRelaxation=spinRelaxation, runOptions=runOptions)
         return DM.getCurrent(populations)
 
 
@@ -37,42 +37,52 @@ if __name__ == "__main__":
     setupLogger()
 
     gOrtho = 10
-    U0 = 8.5
-    U1 = 0.1
-    Ei = 8.25
-    bx = 0.179
     fixedParameters = {
-                DQDParameters.B_FIELD.value: 0.20,
-                DQDParameters.B_PARALLEL.value: bx,
-                DQDParameters.E_I.value: Ei,
-                DQDParameters.T.value: 0.004,
-                DQDParameters.DELTA_SO.value: 0.06,
-                DQDParameters.DELTA_KK.value: 0.02,
-                DQDParameters.T_SOC.value: 0.0,
-                DQDParameters.U0.value: U0,
-                DQDParameters.U1.value: U1,
-                DQDParameters.X.value: 0.02,
-                DQDParameters.G_ORTHO.value: gOrtho,
-                DQDParameters.G_ZZ.value: 10 * gOrtho,
-                DQDParameters.G_Z0.value: 2 * gOrtho / 3,
-                DQDParameters.G_0Z.value: 2 * gOrtho / 3,
-                DQDParameters.GS.value: 2,
-                DQDParameters.GSLFACTOR.value: 1.0,
-                DQDParameters.GV.value: 20.0,
-                DQDParameters.GVLFACTOR.value: 0.66,
-                DQDParameters.A.value: 0.1,
-                DQDParameters.P.value: 0.02,
-                DQDParameters.J.value: 0.00075 / gOrtho,
-    }
+                    DQDParameters.B_FIELD.value: 1.50,
+                    DQDParameters.B_PARALLEL.value: 0.1586,
+                    DQDParameters.E_I.value: 3.1839,
+                    DQDParameters.T.value: 0.4,
+                    DQDParameters.DELTA_SO.value: -0.04,
+                    DQDParameters.DELTA_KK.value: 0.02,
+                    DQDParameters.T_SOC.value: 0.0,
+                    DQDParameters.U0.value: 10,
+                    DQDParameters.U1.value: 5,
+                    DQDParameters.X.value: 0.02,
+                    DQDParameters.G_ORTHO.value: gOrtho,
+                    DQDParameters.G_ZZ.value: 10 * gOrtho,
+                    DQDParameters.G_Z0.value: 2 * gOrtho / 3,
+                    DQDParameters.G_0Z.value: 2 * gOrtho / 3,
+                    DQDParameters.GS.value: 2,
+                    DQDParameters.GSLFACTOR.value: 1.0,
+                    DQDParameters.GV.value: 28.0,
+                    DQDParameters.GVLFACTOR.value: 0.66,
+                    DQDParameters.A.value: 0.1,
+                    DQDParameters.P.value: 0.02,
+                    DQDParameters.J.value: 0.00075 / gOrtho,
+        }
 
-    maxTime = 2.5
-    totalPoints = 300
+    maxTime = 20
+    totalPoints = 1200
+    T1 = 2e2  # Spin relaxation time in ns
+    T2 = 1e2  # Dephasing time in ns
+    activateDephasing = True
+    activateSpinRelaxation = True
     cutOffN = None
-    dephasing = None
-    spinRelaxation = None
+    filter = False
 
-    detuningList = np.linspace(7.5, 9.5, totalPoints)
-    bxList = np.array([0.179])
+
+    spinRelaxation = None
+    dephasing = None
+    DM = DynamicsManager(fixedParameters)
+    runOptions = DM.getRunOptions(atol=1e-8, rtol=1e-6, nsteps=10000)
+
+    if activateSpinRelaxation:
+        spinRelaxation = DM.gammaRelaxation(T1)  # Spin relaxation time in meV
+    if activateDephasing:
+        dephasing = DM.gammaDephasing(T2, T1)  # Dephasing and spin relaxation time in meV
+
+    detuningList = np.linspace(2.85, 3.85, totalPoints)
+    bxList = np.array([0.1586])
 
     timesNs = np.linspace(0, maxTime, totalPoints)
 
@@ -86,7 +96,7 @@ if __name__ == "__main__":
         parameters = deepcopy(fixedParameters)
         parameters[DQDParameters.B_PARALLEL.value] = bx
         currents = Parallel(n_jobs=numCores)(
-            delayed(runDynamics)(detuning, parameters, timesNs, cutOffN, dephasing, spinRelaxation)
+            delayed(runDynamics)(detuning, parameters, timesNs, cutOffN, dephasing, spinRelaxation, runOptions)
             for detuning in detuningList
         )
 
@@ -108,16 +118,16 @@ if __name__ == "__main__":
         else:
             title += " for SWT"
 
-        if dephasing is not None:
-            if spinRelaxation is not None:
-                title += f", dephasing = {dephasing}, spin relaxation = {spinRelaxation}"
+        if activateDephasing:
+            if activateSpinRelaxation:
+                title += f" with T1 {T1:.3e} ns and T2 {T2:.3e} ns (just dephasing)"
             else:
-                title += f", dephasing = {dephasing}"
+                title += f" with T1 {T1:.3e} ns and T2 {T2:.3e} ns"
+
         else:
-            if spinRelaxation is not None:
-                title += f", spin relaxation = {spinRelaxation}"
+            if activateSpinRelaxation:
+                title += f" with T1 {T1:.3e} ns (no dephasing)"
 
         plt.title(title)
-        DM = DynamicsManager(parameters)
         DM.saveResults(name="rabi_2D_ei")
         logging.info(f"Simulation {idx+1}/{len(bxList)} completed.\n")
