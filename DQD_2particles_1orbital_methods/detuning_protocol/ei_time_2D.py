@@ -119,7 +119,7 @@ if __name__ == "__main__":
             title += " for SWT"
 
         if activateDephasing:
-            if activateSpinRelaxation:
+            if not activateSpinRelaxation:
                 title += f" with T1 {T1:.3e} ns and T2 {T2:.3e} ns (just dephasing)"
             else:
                 title += f" with T1 {T1:.3e} ns and T2 {T2:.3e} ns"

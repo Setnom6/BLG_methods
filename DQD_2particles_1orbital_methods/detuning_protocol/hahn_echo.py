@@ -35,8 +35,6 @@ fixedParameters = {
 DM = DynamicsManager(fixedParameters)
 
 expectedPeriod = 3.7578 # Expected period in ns
-interactionTime = expectedPeriod*3 # Interaction time in ns for (add half periods to transfer population at its maximum)
-intervalTimes = [10, interactionTime, 10, 5] # First solpe, anticrossingn plateau, second slope, final plateau in ns
 totalPoints = 1200
 runOptions = DM.getRunOptions(atol=1e-8, rtol=1e-6, nsteps=10000)
 T1 = 2e5  # Spin relaxation time in ns
@@ -45,8 +43,6 @@ activateDephasing = True
 activateSpinRelaxation = True
 cutOffN = None
 filter = False
-
-inverseProtocol = True  # If True, the protocol is inverted (from high to low detuning)
 
 
 spinRelaxation = None
@@ -57,16 +53,14 @@ if activateDephasing:
     dephasing = DM.gammaDephasing(T2, T1)  # Dephasing and spin relaxation time in meV
     
     
-if inverseProtocol:
-    tlistNano, eiValues = DM.obtainInverseProtocolParameters(intervalTimes, totalPoints, interactionDetuning=interactionDetuning)
-else:
-    tlistNano, eiValues = DM.obtainOriginalProtocolParameters(intervalTimes, totalPoints, interactionDetuning=interactionDetuning)
+
+tlistNano, eiValues = DM.obtainHahnEchoParameters(expectedPeriod, totalPoints, interactionDetuning=interactionDetuning)
 
 populations = DM.detuningProtocol(tlistNano, eiValues, filter=filter, dephasing=dephasing, spinRelaxation=spinRelaxation, cutOffN=cutOffN, runOptions=runOptions)
 
 fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, sharex=True, figsize=(10, 10), height_ratios=[3, 1, 1])
 
-title = "Population dynamics"
+title = "Population dynamics during Hahn Echo Protocol"
 
 if cutOffN is not None:
     title += f" (cutOff for {cutOffN} states)"

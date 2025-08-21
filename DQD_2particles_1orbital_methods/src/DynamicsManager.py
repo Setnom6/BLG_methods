@@ -63,7 +63,7 @@ class DynamicsManager:
         tlist = self.nsToMeV * tlistNano
 
         # --- Initial state ---
-        rho0 = self.obtainInitialGroundState(cutOffN=cutOffN)
+        rho0 = self.obtainInitialGroundState(detuning=eiValues[0], cutOffN=cutOffN)
 
         if filter:
             # === Apply physical limitations ===
@@ -111,7 +111,7 @@ class DynamicsManager:
         result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=collapseOpsEffQObj, options=runOptions)
         return np.array([state.diag() for state in result.states])
     
-    def obtainOriginalProtocolParameters(self, intervalTimes, totalPoints):
+    def obtainOriginalProtocolParameters(self, intervalTimes, totalPoints, interactionDetuning=None):
         """
         Original protocol is composed of a first sweep from 0 to the interaction detuning E, 
         then a plateau at the anticrossing point, a second sweep (quick or slow) to 2*E and finally a plateau at 2*E.
@@ -125,8 +125,10 @@ class DynamicsManager:
             np.linspace(intervalTimes[0] + intervalTimes[1] + intervalTimes[2], tTotal, nValues[3])
         ])
 
+        if interactionDetuning is None:
+            interactionDetuning = self.fixedParameters[DQDParameters.E_I.value]
         eiIntervals = [0.0,
-                    self.fixedParameters[DQDParameters.E_I.value],
+                    interactionDetuning,
                     2.0 * self.fixedParameters[DQDParameters.U0.value]]
         eiValues = np.concatenate([
             np.linspace(eiIntervals[0], eiIntervals[1], nValues[0], endpoint=False),
@@ -136,6 +138,90 @@ class DynamicsManager:
         ])
 
         return tlistNano, eiValues
+    
+    def obtainInverseProtocolParameters(self, intervalTimes, totalPoints, interactionDetuning=None):
+        """
+        Inverse protocol is composed of a first sweep from high detuning to the interaction detuning E, 
+        then a plateau at the anticrossing point, a second sweep (quick or slow) to 2*E and finally a plateau at 2*E.
+        """
+        tTotal = sum(intervalTimes)
+        nValues = [int(intervalTimes[i] * totalPoints / tTotal) for i in range(4)]
+        tlistNano = np.concatenate([
+            np.linspace(0, intervalTimes[0], nValues[0], endpoint=False),
+            np.linspace(intervalTimes[0], intervalTimes[0] + intervalTimes[1], nValues[1], endpoint=False),
+            np.linspace(intervalTimes[0] + intervalTimes[1], intervalTimes[0] + intervalTimes[1] + intervalTimes[2], nValues[2], endpoint=False),
+            np.linspace(intervalTimes[0] + intervalTimes[1] + intervalTimes[2], tTotal, nValues[3])
+        ])
+
+        if interactionDetuning is None:
+            interactionDetuning = self.fixedParameters[DQDParameters.E_I.value]
+        eiIntervals = [2.0* self.fixedParameters[DQDParameters.U0.value],
+                    interactionDetuning,
+                    2.0 * self.fixedParameters[DQDParameters.U0.value]]
+        eiValues = np.concatenate([
+            np.linspace(eiIntervals[0], eiIntervals[1], nValues[0], endpoint=False),
+            np.full(nValues[1], eiIntervals[1]),
+            np.linspace(eiIntervals[1], eiIntervals[2], nValues[2]),
+            np.full(nValues[3], eiIntervals[2])
+        ])
+
+        return tlistNano, eiValues
+    
+    def obtainHahnEchoParameters(self, expectedPeriod, totalPoints, interactionDetuning=None):
+        """
+        The system starts at high detuning and stays there for some initial time.
+        Then it goes quickly to the interaction detuning, stays there for T/4 and returns slowly to the high detuning.
+        After some time it goes quikly again to the interaction detuning, stays there for T/2 and returns slowly to the high detuning.
+        Finally, it stays at high detuning for some time. The echo is expected to occur at T/2.
+        """
+
+        tlistNano = np.linspace(0, 2 * expectedPeriod, totalPoints)
+        eiValues = np.zeros(totalPoints)
+        if interactionDetuning is None:
+            interactionDetuning = interactionDetuning
+
+        # First part: high detuning
+        nHighDetuning = int(totalPoints * 0.1)
+        eiValues[:nHighDetuning] = 2.0 * self.fixedParameters[DQDParameters.U0.value]
+        # Second part: quick sweep to interaction detuning
+        nQuickSweep = int(totalPoints * 0.1)
+        eiValues[nHighDetuning:nHighDetuning + nQuickSweep] = np.linspace(
+            2.0 * self.fixedParameters[DQDParameters.U0.value],
+            interactionDetuning,
+            nQuickSweep
+        )
+        # Third part: stay at interaction detuning for T/4
+        nStayAtInteraction = int(totalPoints * 0.2)
+        eiValues[nHighDetuning + nQuickSweep:nHighDetuning + nQuickSweep + nStayAtInteraction] = interactionDetuning
+        # Fourth part: slow sweep back to high detuning
+        nSlowSweep = int(totalPoints * 0.2)
+        eiValues[nHighDetuning + nQuickSweep + nStayAtInteraction:nHighDetuning + nQuickSweep + nStayAtInteraction + nSlowSweep] = np.linspace(
+            interactionDetuning,
+            2.0 * self.fixedParameters[DQDParameters.U0.value],
+            nSlowSweep
+        )
+        # Fifth part: quick sweep to interaction detuning again
+        nQuickSweep2 = int(totalPoints * 0.1)
+        eiValues[nHighDetuning + nQuickSweep + nStayAtInteraction + nSlowSweep:nHighDetuning + nQuickSweep + nStayAtInteraction + nSlowSweep + nQuickSweep2] = np.linspace(
+            2.0 * self.fixedParameters[DQDParameters.U0.value],
+            interactionDetuning,
+            nQuickSweep2
+        )
+        # Sixth part: stay at interaction detuning for T/2
+        nStayAtInteraction2 = int(totalPoints * 0.4)
+        eiValues[nHighDetuning + nQuickSweep + nStayAtInteraction + nSlowSweep + nQuickSweep2:nHighDetuning + nQuickSweep + nStayAtInteraction + nSlowSweep + nQuickSweep2 + nStayAtInteraction2] = interactionDetuning
+        # Seventh part: slow sweep back to high detuning
+        nSlowSweep2 = int(totalPoints * 0.2)
+        eiValues[nHighDetuning + nQuickSweep + nStayAtInteraction + nSlowSweep + nQuickSweep2 + nStayAtInteraction2:nHighDetuning + nQuickSweep + nStayAtInteraction + nSlowSweep + nQuickSweep2 + nStayAtInteraction2 + nSlowSweep2] = np.linspace(
+            interactionDetuning,
+            2.0 * self.fixedParameters[DQDParameters.U0.value],
+            nSlowSweep2
+        )
+        # Eighth part: stay at high detuning for some time
+        nFinalHighDetuning = int(totalPoints * 0.1)
+        eiValues[nHighDetuning + nQuickSweep + nStayAtInteraction + nSlowSweep + nQuickSweep2 + nStayAtInteraction2 + nSlowSweep2:nHighDetuning + nQuickSweep + nStayAtInteraction + nSlowSweep + nQuickSweep2 + nStayAtInteraction2 + nSlowSweep2 + nFinalHighDetuning] = 2.0 * self.fixedParameters[DQDParameters.U0.value]
+        return tlistNano, eiValues
+
     
     def getRunOptions(self, atol = 1e-5, rtol = 1e-3, nsteps = 10000):
         """
