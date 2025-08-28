@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from src.DynamicsManager import DynamicsManager, DQDParameters
+from src.DynamicsManager import DynamicsManager, DQDParameters, setupLogger
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -33,7 +33,9 @@ fixedParameters = {
     }
 
 DM = DynamicsManager(fixedParameters)
-
+setupLogger()
+import logging 
+logging.infor("Executing hahn-echo protocol...")
 expectedPeriod = 3.7578 # Expected period in ns
 totalPoints = 1200
 runOptions = DM.getRunOptions(atol=1e-8, rtol=1e-6, nsteps=10000)
@@ -117,5 +119,7 @@ ax3.grid()
 plt.subplots_adjust(hspace=0.4, right=0.75)
 
 DM.saveResults(name="Detuning_protocol")
+
+logging.info("All computations ended.")
 
 plt.show()

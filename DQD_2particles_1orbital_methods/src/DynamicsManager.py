@@ -11,7 +11,23 @@ import matplotlib.pyplot as plt
 from detuning_protocol.realistic_signal import *
 from src.LindblandOperator import LindbladOperator
 import numpy as np
-from qutip import Qobj, mesolve, Options
+from qutip import Qobj, mesolve
+import logging
+
+def setupLogger():
+        DM = DynamicsManager({})
+        logDir = DM.figuresDir
+        os.makedirs(logDir, exist_ok=True)
+        logPath = os.path.join(logDir, "log_results.txt")
+
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            handlers=[
+                logging.FileHandler(logPath),
+                logging.StreamHandler()
+            ]
+        )
 
 class DynamicsManager:
 
@@ -242,12 +258,12 @@ class DynamicsManager:
         """
         Returns the options for the mesolve function.
         """
-        return Options(
-            nsteps=nsteps,
-            atol=atol,
-            rtol=rtol,
-            method='bdf'
-            )
+        return {
+            "nsteps": nsteps,
+            "atol":atol,
+            "rtol": rtol,
+            "method": 'bdf'
+        }
     
     def getCurrent(self, populations):
         I_t = []

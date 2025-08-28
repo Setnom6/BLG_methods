@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from src.DynamicsManager import DynamicsManager, DQDParameters
+from src.DynamicsManager import DynamicsManager, DQDParameters, setupLogger
 import numpy as np
 import matplotlib.pyplot as plt
 import logging
@@ -10,20 +10,6 @@ import os
 from joblib import Parallel, delayed, cpu_count
 from copy import deepcopy
 
-def setupLogger():
-        DM = DynamicsManager({})
-        logDir = DM.figuresDir
-        os.makedirs(logDir, exist_ok=True)
-        logPath = os.path.join(logDir, "error_log.txt")
-
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s [%(levelname)s] %(message)s",
-            handlers=[
-                logging.FileHandler(logPath),
-                logging.StreamHandler()
-            ]
-        )
 
 def runDynamics(bx, parameters, times):
         params = deepcopy(parameters)

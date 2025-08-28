@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from src.DynamicsManager import DynamicsManager, DQDParameters
+from src.DynamicsManager import DynamicsManager, DQDParameters, setupLogger
 import numpy as np
 import matplotlib.pyplot as plt
 import logging
@@ -14,21 +14,6 @@ from scipy.fft import fft, fftfreq
 from datetime import datetime
 from matplotlib import cm
 
-# ---------------- logger ----------------
-def setupLogger():
-        DM = DynamicsManager({})
-        logDir = DM.figuresDir
-        os.makedirs(logDir, exist_ok=True)
-        logPath = os.path.join(logDir, "log_results.txt")
-
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s [%(levelname)s] %(message)s",
-            handlers=[
-                logging.FileHandler(logPath),
-                logging.StreamHandler()
-            ]
-        )
 
 # ---------------- dynamics ----------------
 def runDynamics(detuning, parameters, times, cutOffN, dephasing, spinRelaxation):

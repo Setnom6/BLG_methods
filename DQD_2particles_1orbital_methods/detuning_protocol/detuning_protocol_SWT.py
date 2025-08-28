@@ -1,9 +1,10 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from src.DynamicsManager import DynamicsManager, DQDParameters
+from src.DynamicsManager import DynamicsManager, DQDParameters, setupLogger
 import numpy as np
 import matplotlib.pyplot as plt
+import logging
 
 
 gOrtho = 10
@@ -33,16 +34,19 @@ fixedParameters = {
 }
 
 DM = DynamicsManager(fixedParameters)
+setupLogger()
+
+logging.info("Running detuning protocol...")
 
 expectedPeriod = 1.4862 # Expected period in ns
-interactionTime = expectedPeriod*3 # Interaction time in ns for (add half periods to transfer population at its maximum)
+interactionTime = expectedPeriod*5.5 # Interaction time in ns for (add half periods to transfer population at its maximum)
 intervalTimes = [5*expectedPeriod, interactionTime, 5*expectedPeriod, 5*expectedPeriod] # First solpe, anticrossingn plateau, second slope, final plateau in ns
 totalPoints = 600
 runOptions = DM.getRunOptions(atol=1e-8, rtol=1e-6, nsteps=10000)
 T1 = 100000  # Spin relaxation time in ns
 T2star = 100000  # Dephasing time in ns
-activateDephasing = True
-activateSpinRelaxation = True
+activateDephasing = False
+activateSpinRelaxation = False
 cutOffN = None
 filter = False
 
@@ -86,7 +90,7 @@ else:
         title += f" with T1 {T1:.3e} ns"
 
 # Individual populations
-statesToPlot = [DM.correspondence[i] for i in range(5)]
+statesToPlot = [DM.correspondence[i] for i in range(4)]
 for label in statesToPlot:
     index = DM.invCorrespondence[label]
     ax1.plot(tlistNano, populations[:, index], label=label)
@@ -124,5 +128,6 @@ ax3.grid()
 plt.subplots_adjust(hspace=0.4, right=0.75)
 
 DM.saveResults(name="Detuning_protocol")
+logging.info("All computations ended.")
 
 plt.show()
