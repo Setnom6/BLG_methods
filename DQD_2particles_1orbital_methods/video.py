@@ -2,27 +2,37 @@ import os
 import glob
 import imageio.v2 as imageio
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
+currentDir = os.path.dirname(os.path.abspath(__file__))
 
-base_name = "Projection"
+baseName = "Projection"
 extension = ".png"
-output_video = os.path.join(current_dir, "figures", "gOrthoEvo.mp4")
-fps = 2
+outputGif = os.path.join(currentDir, "figures", "deltaKK.gif")
 
-pattern = os.path.join(current_dir, "figures", "forVideo", f"{base_name}*{extension}")
-print(pattern)
-png_files = sorted(glob.glob(pattern))
+# Total GIF duration in seconds (uniformly distributed across all frames)
+totalDuration = 12.0
 
-if not png_files:
-    print("No png files founded.")
-    exit()
+globPattern = os.path.join(currentDir, "figures", "forVideo", f"{baseName}*{extension}")
+print(globPattern)
+pngFiles = sorted(glob.glob(globPattern))
 
-print(f"generating video with {len(png_files)} frames...")
+if not pngFiles:
+    print("No png files found.")
+    raise SystemExit(1)
 
-with imageio.get_writer(output_video, fps=fps) as writer:
-    for file in png_files:
-        image = imageio.imread(file)
-        writer.append_data(image)
+nFrames = len(pngFiles)
+frameDuration = float(totalDuration) / float(nFrames)  # seconds per frame
 
-print(f"Video saved as {output_video}")
+print(f"Generating GIF with {nFrames} frames, total duration {totalDuration:.3f}s "
+      f"({frameDuration:.3f}s per frame)...")
+
+# loop=0 for infinite loop; duration is set per-frame in append_data for reliability
+with imageio.get_writer(outputGif, mode='I', loop=0) as writer:
+    for filePath in pngFiles:
+        image = imageio.imread(filePath)
+        writer.append_data(image, {'duration': frameDuration})  # duración en segundos por cuadro
+
+
+print(f"GIF saved as {outputGif}")
+
+
 

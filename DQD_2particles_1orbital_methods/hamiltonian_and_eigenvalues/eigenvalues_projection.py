@@ -9,20 +9,17 @@ import numpy as np
 # We have first to define the parameters of the BLG DQD we want to simulate
 
 gOrtho = 10
-U0 = 10
-U1 = 5.0
-Ei = 2.25
-bx = 1.35
+interactionDetuning = 4.7638  # Interaction detuning in meV
 fixedParameters = {
             DQDParameters.B_FIELD.value: 1.50,
-            DQDParameters.B_PARALLEL.value: bx,
-            DQDParameters.E_I.value: Ei,
-            DQDParameters.T.value: 0.4,
-            DQDParameters.DELTA_SO.value: -0.04,
+            DQDParameters.B_PARALLEL.value: 0.1,
+            DQDParameters.E_I.value: interactionDetuning,
+            DQDParameters.T.value: 0.05,
+            DQDParameters.DELTA_SO.value: 0.066,
             DQDParameters.DELTA_KK.value: 0.02,
             DQDParameters.T_SOC.value: 0.0,
-            DQDParameters.U0.value: U0,
-            DQDParameters.U1.value: U1,
+            DQDParameters.U0.value: 6.0,
+            DQDParameters.U1.value: 1.5,
             DQDParameters.X.value: 0.02,
             DQDParameters.G_ORTHO.value: gOrtho,
             DQDParameters.G_ZZ.value: 10 * gOrtho,
@@ -48,7 +45,7 @@ plottingOptions = {
     PlotParameters.EXTRA_FOLDER: "",
     PlotParameters.SPECIAL_TITLE: None,
     PlotParameters.PARAM_TO_ITER: DQDParameters.E_I,
-    PlotParameters.ARRAY: np.linspace(0.0*U0, 1.5*U0, 1000),
+    PlotParameters.ARRAY: np.linspace(0.0, 1.5*6.0, 1000),
     PlotParameters.BASIS: BasisToProject.SINGLET_TRIPLET_REORDERED_BASIS,
     PlotParameters.Y_LIMS: None
 }

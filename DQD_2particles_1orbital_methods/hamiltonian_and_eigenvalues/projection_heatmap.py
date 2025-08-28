@@ -10,20 +10,17 @@ from src.PlotsManager import PlotsManager, PlotParameters, BasisToProject, DQDPa
 # We have first to define the parameters of the BLG DQD we want to simulate
 
 gOrtho = 10
-U0 = 8.5
-U1 = 0.1
-Ei = 8.25
-bx = 0.179
+interactionDetuning = 4.7638  # Interaction detuning in meV
 fixedParameters = {
-            DQDParameters.B_FIELD.value: 0.20,
-            DQDParameters.B_PARALLEL.value: bx,
-            DQDParameters.E_I.value: Ei,
-            DQDParameters.T.value: 0.004,
-            DQDParameters.DELTA_SO.value: 0.06,
+            DQDParameters.B_FIELD.value: 1.50,
+            DQDParameters.B_PARALLEL.value: 0.1,
+            DQDParameters.E_I.value: interactionDetuning,
+            DQDParameters.T.value: 0.05,
+            DQDParameters.DELTA_SO.value: 0.066,
             DQDParameters.DELTA_KK.value: 0.02,
             DQDParameters.T_SOC.value: 0.0,
-            DQDParameters.U0.value: U0,
-            DQDParameters.U1.value: U1,
+            DQDParameters.U0.value: 6.0,
+            DQDParameters.U1.value: 1.5,
             DQDParameters.X.value: 0.02,
             DQDParameters.G_ORTHO.value: gOrtho,
             DQDParameters.G_ZZ.value: 10 * gOrtho,
@@ -31,7 +28,7 @@ fixedParameters = {
             DQDParameters.G_0Z.value: 2 * gOrtho / 3,
             DQDParameters.GS.value: 2,
             DQDParameters.GSLFACTOR.value: 1.0,
-            DQDParameters.GV.value: 20.0,
+            DQDParameters.GV.value: 28.0,
             DQDParameters.GVLFACTOR.value: 0.66,
             DQDParameters.A.value: 0.1,
             DQDParameters.P.value: 0.02,
@@ -48,7 +45,7 @@ plottingOptions = {
     PlotParameters.SHOW : True,
     PlotParameters.EXTRA_FOLDER: "",
     PlotParameters.SPECIAL_TITLE: None,
-    PlotParameters.BASIS: BasisToProject.SINGLET_TRIPLET_REORDERED_BASIS,
+    PlotParameters.BASIS: BasisToProject.MINIMAL_BASIS,
     PlotParameters.BLOCKS: None, # Predeterminated blocks works fine
 }
 

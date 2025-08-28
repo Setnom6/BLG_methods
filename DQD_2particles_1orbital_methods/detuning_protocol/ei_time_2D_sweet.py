@@ -94,14 +94,14 @@ def computeRabiFrequencyMap():
     gOrtho = 10
     fixedParameters = {
         DQDParameters.B_FIELD.value: 1.50,
-        DQDParameters.B_PARALLEL.value: 1.35,
+        DQDParameters.B_PARALLEL.value: 0.0,
         DQDParameters.E_I.value: 0.0,
-        DQDParameters.T.value: 0.4,
-        DQDParameters.DELTA_SO.value: -0.04,
+        DQDParameters.T.value: 0.05,
+        DQDParameters.DELTA_SO.value: 0.066,
         DQDParameters.DELTA_KK.value: 0.02,
         DQDParameters.T_SOC.value: 0.0,
-        DQDParameters.U0.value: 10,
-        DQDParameters.U1.value: 5,
+        DQDParameters.U0.value: 6.0,
+        DQDParameters.U1.value: 1.5,
         DQDParameters.X.value: 0.02,
         DQDParameters.G_ORTHO.value: gOrtho,
         DQDParameters.G_ZZ.value: 10 * gOrtho,
@@ -116,23 +116,24 @@ def computeRabiFrequencyMap():
         DQDParameters.J.value: 0.00075 / gOrtho,
     }
 
-    maxTime = 10  # ns
-    totalPoints = 300  # Reducir para prueba, aumentar para mejor resolución
+    maxTime = 7  # ns
+    totalPoints = 100  # Reducir para prueba, aumentar para mejor resolución
+    totalTimes = 300
     cutOffN = None
     dephasing = None
     spinRelaxation = None
 
     # Definir rangos para el espacio 2D
-    detuningList = np.linspace(2.0, 6.0, totalPoints)
+    detuningList = np.linspace(4.0, 6.0, totalPoints)
     
     eps = 1e-5
     halfPoints = totalPoints // 2
 
-    left = np.linspace(-2.5, -eps, halfPoints, endpoint=True)
-    right = np.linspace(eps, 2.5, totalPoints - halfPoints, endpoint=True)
+    left = np.linspace(-1.0, -eps, halfPoints, endpoint=True)
+    right = np.linspace(eps, 1.0, totalPoints - halfPoints, endpoint=True)
     bParallelList = np.concatenate((left, right))
 
-    timesNs = np.linspace(0, maxTime, totalPoints)
+    timesNs = np.linspace(0, maxTime, totalTimes)
 
     maxCores = min(24, cpu_count())
     logging.info(f"Using {maxCores} cores with joblib.")
@@ -204,10 +205,10 @@ def plotResults(detuningList, bParallelList, rabiFreqMap, grad_detuning, dominan
 
     # Selected indices of specific b_values
     selected_indices = [
-    np.argmin(np.abs(bParallelList - (-1.35))),
+    np.argmin(np.abs(bParallelList - (-0.85))),
     np.argmin(np.abs(bParallelList - (-0.25))),
     np.argmin(np.abs(bParallelList - (0.15))),
-    np.argmin(np.abs(bParallelList - (1.45)))
+    np.argmin(np.abs(bParallelList - (0.75)))
     ]
     colors = ['red', 'blue', 'green', 'purple']
     
@@ -221,7 +222,7 @@ def plotResults(detuningList, bParallelList, rabiFreqMap, grad_detuning, dominan
                                   bParallelList[0], bParallelList[-1]],
                            origin='lower', cmap=cmap_rabi)
     axes[0, 0].set_xlabel('Detuning (meV)')
-    axes[0, 0].set_ylabel('B_parallel (meV)')
+    axes[0, 0].set_ylabel('B_parallel (T)')
     axes[0, 0].set_title('Rabi Frequency Map (GHz)')
     plt.colorbar(im1, ax=axes[0, 0], label="GHz")
 
@@ -234,7 +235,7 @@ def plotResults(detuningList, bParallelList, rabiFreqMap, grad_detuning, dominan
                                 bParallelList[0], bParallelList[-1]],
                         origin='lower', cmap='bwr', vmin=-np.max(np.abs(grad_detuning)), vmax=np.max(np.abs(grad_detuning)))
     axes[0, 1].set_xlabel('Detuning (meV)')
-    axes[0, 1].set_ylabel('B_parallel (meV)')
+    axes[0, 1].set_ylabel('B_parallel (T)')
     axes[0, 1].set_title('Gradient wrt Detuning (GHz per meV)')
     plt.colorbar(im2, ax=axes[0, 1], label="d(freq)/d(detuning)")
 
@@ -247,29 +248,29 @@ def plotResults(detuningList, bParallelList, rabiFreqMap, grad_detuning, dominan
                                 bParallelList[0], bParallelList[-1]],
                         origin='lower', cmap='inferno')
     axes[1, 0].set_xlabel('Detuning (meV)')
-    axes[1, 0].set_ylabel('B_parallel (meV)')
+    axes[1, 0].set_ylabel('B_parallel (T)')
     axes[1, 0].set_title('Dominance: Peak Height / FWHM')
     plt.colorbar(im3, ax=axes[1, 0], label="Dominance (Height/GHz)")
 
     for idx, color in zip(selected_indices, colors):
         axes[1, 0].axhline(y=bParallelList[idx], color=color, linestyle='--', alpha=0.7, linewidth=1.5)
     
-    # 4. Cortes transversales
+    # 4. Cortes transversales (solo frecuencia)
+    ax4 = axes[1, 1]
 
-    
     for idx, color in zip(selected_indices, colors):
         b_val = bParallelList[idx]
         rabiRow = rabiFreqMap[idx, :]
-        gradRow = grad_detuning[idx, :]
 
-        axes[1, 1].plot(detuningList, rabiRow, color=color, label=f'B_parallel = {b_val:.3f}')
-        axes[1, 1].plot(detuningList, gradRow, color=color, linestyle='--', alpha=0.7)
-    
-    axes[1, 1].set_xlabel('Detuning (meV)')
-    axes[1, 1].set_ylabel('Frequency (GHz) / Gradient (dashed)')
-    axes[1, 1].set_title('Transverse Cuts')
-    axes[1, 1].legend()
-    axes[1, 1].grid(True)
+        # Frecuencia (eje izquierdo)
+        ax4.plot(detuningList, rabiRow, color=color, label=f'B_parallel = {b_val:.3f} T')
+
+    # Configuración de ejes y leyendas
+    ax4.set_xlabel('Detuning (meV)')
+    ax4.set_ylabel('Frequency (GHz)')
+    ax4.set_title('Transverse Cuts')
+    ax4.legend(loc='upper right')
+    ax4.grid(True)
     
     plt.tight_layout()
     return fig, axes
