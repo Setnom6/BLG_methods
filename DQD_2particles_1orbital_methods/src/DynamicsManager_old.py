@@ -17,8 +17,8 @@ class DynamicsManager:
 
     def __init__(self, fixedParameters):
         self.dqd = DQD_2particles_1orbital()
-        self.basis = self.dqd.singlet_triplet_minimal_basis
-        self.correspondence = self.dqd.singlet_tirplet_minimal_correspondence
+        self.basis = self.dqd.singlet_triplet_reordered_basis
+        self.correspondence = self.dqd.singlet_triplet_reordered_correspondence
         self.invCorrespondence = {v: k for k, v in self.correspondence.items()}
         self.nsToMeV = 1519.30 # hbar = 6.582x10-25 GeV s -> 1 GeV-1 = 6.582x10-15 s -> 1 ns = 1519.30 meV-1
         self.fixedParameters = fixedParameters
@@ -365,7 +365,7 @@ class DynamicsManager:
 
     @staticmethod
     def schriefferWolff(H_full, collapseOp = None):
-        N0 = 5
+        N0 = 4
         N1 = 6
         subspace_indices = [0]*N0 + [1]*N1
         H0_tot = H_full[:N0+N1, :N0+N1]
@@ -405,9 +405,9 @@ class DynamicsManager:
 
     @staticmethod
     def completeSchriefferWolff(H_full):
-        N0 = 5
+        N0 = 4
         N1 = 6
-        N2 = 17
+        N2 = 18
         
         # Subespacio para primera SWT: modos 1 y 2 (se descarta el 0)
         subspace_indicesi = [0]*N1 + [1]*N2

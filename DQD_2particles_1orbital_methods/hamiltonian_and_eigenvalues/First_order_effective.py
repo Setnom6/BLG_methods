@@ -10,7 +10,7 @@ from datetime import datetime
 from pymablock import block_diagonalize
 
 def schriefferWolff(H_full):
-    N0 = 5
+    N0 = 4
     N1 = 6
     subspace_indices = [0]*N0 + [1]*N1
     H0_tot = H_full[:N0+N1, :N0+N1]
@@ -21,15 +21,15 @@ def schriefferWolff(H_full):
 
     H_tilde, _, _ = block_diagonalize(hamiltonian, subspace_indices=subspace_indices)
 
-    transformed_H = np.ma.sum(H_tilde[:2, :2, :3], axis=2)
+    try:
+        transformed_H = np.ma.sum(H_tilde[:2, :2, :3], axis=2)
+    except:
+        transformed_H = np.ma.sum(H_tilde[:2, :2, :2], axis=2)
     return transformed_H[0, 0]
 
 def firstOrderNaif(H_full):
-    N = 11
+    N = 10
     H00 = H_full[:N, :N]
-    H01 = H_full[:N, N:]
-    H10 = H_full[N:, :N]
-    H11 = H_full[N:, N:]
     return H00
 
 # Fixed Parameters
@@ -38,16 +38,18 @@ U0 = 8.5
 U1 = 0.1
 Ei = 8.25
 bx = 0.179
+gOrtho = 10
+interactionDetuning = 4.7638  # Interaction detuning in meV
 fixedParameters = {
-            DQDParameters.B_FIELD.value: 0.20,
-            DQDParameters.B_PARALLEL.value: bx,
-            DQDParameters.E_I.value: Ei,
-            DQDParameters.T.value: 0.004,
-            DQDParameters.DELTA_SO.value: 0.06,
+            DQDParameters.B_FIELD.value: 1.50,
+            DQDParameters.B_PARALLEL.value: 0.1,
+            DQDParameters.E_I.value: interactionDetuning,
+            DQDParameters.T.value: 0.05,
+            DQDParameters.DELTA_SO.value: 0.066,
             DQDParameters.DELTA_KK.value: 0.02,
             DQDParameters.T_SOC.value: 0.0,
-            DQDParameters.U0.value: U0,
-            DQDParameters.U1.value: U1,
+            DQDParameters.U0.value: 6.0,
+            DQDParameters.U1.value: 1.5,
             DQDParameters.X.value: 0.02,
             DQDParameters.G_ORTHO.value: gOrtho,
             DQDParameters.G_ZZ.value: 10 * gOrtho,
@@ -55,7 +57,7 @@ fixedParameters = {
             DQDParameters.G_0Z.value: 2 * gOrtho / 3,
             DQDParameters.GS.value: 2,
             DQDParameters.GSLFACTOR.value: 1.0,
-            DQDParameters.GV.value: 20.0,
+            DQDParameters.GV.value: 28.0,
             DQDParameters.GVLFACTOR.value: 0.66,
             DQDParameters.A.value: 0.1,
             DQDParameters.P.value: 0.02,
@@ -66,14 +68,14 @@ fixedParameters = {
 dqd = DQD_2particles_1orbital(fixedParameters)
 
 # Move detuning Ei
-eiValues = np.linspace(0.75 * U0, 1.2 * U0, 1000)
+eiValues = np.linspace(0.0, 1.2 * U0, 1000)
 allEigenvalues_full = []
 allEigenvalues_SWT = []
 allEigenvalues_naif = []
 allEigenvalues_H00 = []
 
-basis_to_project = dqd.singlet_triplet_reordered_basis
-N = 5
+basis_to_project = dqd.singlet_triplet_minimal_basis
+N = 4
 
 for ei in eiValues:
     parameters = fixedParameters.copy()
@@ -116,7 +118,7 @@ fig, axs = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
 for i in range(N):
     axs[0].plot(eiValues, allEigenvalues_full[:, i] - eiValues, 'C' + str(i), label=f'Full {i+1}')
     axs[0].plot(eiValues, allEigenvalues_SWT[:, i] - eiValues, 'C' + str(i) + '--', label=f'SW {i+1}')
-    #axs[0].plot(eiValues, allEigenvalues_naif[:, i] - eiValues, 'C' + str(i) + '.', label=f'FoN {i+1}')
+    axs[0].plot(eiValues, allEigenvalues_naif[:, i] - eiValues, 'C' + str(i) + '.', label=f'FoN {i+1}')
     axs[0].plot(eiValues, allEigenvalues_H00[:, i] - eiValues, 'C' + str(i) + ':', label=f'H00 {i+1}')
 axs[0].set_ylabel("Energy - $E_I$ (meV)")
 axs[0].set_title("First order and H00 vs Full Hamiltonian")
@@ -125,7 +127,7 @@ axs[0].legend()
 # 3. Error First order vs Full
 for i in range(N):
     axs[1].plot(eiValues, errors_SWT[:, i], 'C' + str(i) + '--', label=f'Level {i} SWT')
-    #axs[1].plot(eiValues, errors_naif[:, i], 'C' + str(i) + '.', label=f'Level {i} FoN')
+    axs[1].plot(eiValues, errors_naif[:, i], 'C' + str(i) + '.', label=f'Level {i} FoN')
     axs[1].plot(eiValues, errors_H00[:, i], 'C' + str(i)  + ':', label=f'Level {i} H00')
 axs[1].set_yscale("log")
 axs[1].set_xlabel("$E_I$ (meV)")

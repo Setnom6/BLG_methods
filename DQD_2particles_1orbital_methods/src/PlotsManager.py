@@ -24,6 +24,7 @@ class BasisToProject(Enum):
     TOTAL_VALLEY = 'Total Valley'
     TOTAL_DOT = 'Total Dot'
     ORIGINAL = 'Fock'
+    MINIMAL_BASIS = 'Minimal'
 
 
 class TypeOfPlot(Enum):
@@ -96,6 +97,7 @@ class PlotsManager:
             BasisToProject.SINGLET_TRIPLET_IN_SPIN_BASIS : (dqd.singlet_triplet_in_spin_basis, dqd.singlet_triplet_in_spin_correspondence, {"LL": 6, "LR--": 4, "LR+-": 8, "LR++": 4, "RR": 6}),
             BasisToProject.SPIN_PLUS_VALLYE_MINUS_BASIS : (dqd.spinPlus_valleyMinus_basis, dqd.spinPlus_valleyMinus_correspondence, {"LL": 6, "LRT-": 4, "LRS": 4, "LRT0": 4,"LRT+": 4, "RR": 6}),
             BasisToProject.SINGLET_TRIPLET_REORDERED_BASIS : (dqd.singlet_triplet_reordered_basis, dqd.singlet_triplet_reordered_correspondence, {"LessEnergetic": 5, "Interacts": 6, "Rest": 17}),
+            BasisToProject.MINIMAL_BASIS : (dqd.singlet_triplet_minimal_basis, dqd.singlet_tirplet_minimal_correspondence, {"LessEnergetic": 4, "Interacts": 6, "Rest": 20}),
             BasisToProject.ORBITAL_SYMMETRY:  (dqd.orbital_symmetry_basis, dqd.symmetric_antisymmetric_correspondence, {"Sym": 6, "AntiSym": 10, "ortho": 12}),
             BasisToProject.SPIN_SYMMETRY: (dqd.spin_symmetry_basis, dqd.symmetric_antisymmetric_correspondence, {"Sym": 6, "AntiSym": 10, "ortho": 12}),
             BasisToProject.VALLEY_SYMMETRY: (dqd.valley_symmetry_basis, dqd.symmetric_antisymmetric_correspondence, {"Sym": 6, "AntiSym": 10, "ortho": 12}),
@@ -142,7 +144,7 @@ class PlotsManager:
         dict_labels["y axis"] = "Eigvalue (meV)" 
         
         if self.parameter_to_iter == DQDParameters.E_I:
-            dict_labels["x_axis"] = "E_i (meV)"
+            dict_labels["x_axis"] = "E_R (meV)"
             dict_labels["y axis"] = "Eigvalue - E_ref (meV)"
 
         elif self.parameter_to_iter == DQDParameters.B_FIELD:
@@ -158,7 +160,10 @@ class PlotsManager:
             dict_labels["title"] = "Energy levels colored by symmetry classification"
 
             if self.basis_and_correspondences[self.symmetry_color][0] is None: # If it does not have a basis it is because is a total (dot/SPIN/VALLEY)
-                dict_labels["colorbar"] = f'{self.symmetry_color.value}: blue (triplet) to red (singlet)'
+                if self.symmetry_color.value == BasisToProject.TOTAL_DOT.value:
+                    dict_labels["colorbar"] = 'blue (orbitally symmetric) to red (orbitally antisymmetric)'
+                else:
+                    dict_labels["colorbar"] = f'{self.symmetry_color.value}: blue (triplet) to red (singlet)'
 
         elif self.basis_to_project is not None:
             dict_labels["title"] = f"Energy levels colored by similarity with {self.basis_to_project.value} states"
