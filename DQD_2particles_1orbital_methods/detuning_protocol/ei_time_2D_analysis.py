@@ -151,33 +151,34 @@ if __name__ == "__main__":
     setupLogger()
 
     gOrtho = 10
+    interactionDetuning = 4.7638  # Interaction detuning in meV
     fixedParameters = {
-        DQDParameters.B_FIELD.value: 1.50,
-        DQDParameters.B_PARALLEL.value: 0.0,
-        DQDParameters.E_I.value: 0.0,
-        DQDParameters.T.value: 0.05,
-        DQDParameters.DELTA_SO.value: 0.066,
-        DQDParameters.DELTA_KK.value: 0.02,
-        DQDParameters.T_SOC.value: 0.0,
-        DQDParameters.U0.value: 6.0,
-        DQDParameters.U1.value: 1.5,
-        DQDParameters.X.value: 0.02,
-        DQDParameters.G_ORTHO.value: gOrtho,
-        DQDParameters.G_ZZ.value: 10 * gOrtho,
-        DQDParameters.G_Z0.value: 2 * gOrtho / 3,
-        DQDParameters.G_0Z.value: 2 * gOrtho / 3,
-        DQDParameters.GS.value: 2,
-        DQDParameters.GSLFACTOR.value: 1.0,
-        DQDParameters.GV.value: 28.0,
-        DQDParameters.GVLFACTOR.value: 0.66,
-        DQDParameters.A.value: 0.1,
-        DQDParameters.P.value: 0.02,
-        DQDParameters.J.value: 0.00075 / gOrtho,
-    }
+                DQDParameters.B_FIELD.value: 1.50,
+                DQDParameters.B_PARALLEL.value: 0.1,
+                DQDParameters.E_I.value: 0.0,
+                DQDParameters.T.value: 0.05,
+                DQDParameters.DELTA_SO.value: 0.066,
+                DQDParameters.DELTA_KK.value: 0.02,
+                DQDParameters.T_SOC.value: 0.0,
+                DQDParameters.U0.value: 6.0,
+                DQDParameters.U1.value: 1.5,
+                DQDParameters.X.value: 0.02,
+                DQDParameters.G_ORTHO.value: gOrtho,
+                DQDParameters.G_ZZ.value: 10 * gOrtho,
+                DQDParameters.G_Z0.value: 2 * gOrtho / 3,
+                DQDParameters.G_0Z.value: 2 * gOrtho / 3,
+                DQDParameters.GS.value: 2,
+                DQDParameters.GSLFACTOR.value: 1.0,
+                DQDParameters.GV.value: 28.0,
+                DQDParameters.GVLFACTOR.value: 0.66,
+                DQDParameters.A.value: 0.1,
+                DQDParameters.P.value: 0.02,
+                DQDParameters.J.value: 0.00075 / gOrtho,}
 
 
-    maxTime = 3.0
-    totalPoints = 300
+
+    maxTime = 5.0
+    totalPoints = 600
     cutOffN = None
     dephasing = None
     spinRelaxation = None
@@ -185,7 +186,7 @@ if __name__ == "__main__":
     detuningList = np.linspace(4.0, 6.0, totalPoints)
 
     parameterToChange = DQDParameters.B_PARALLEL.value
-    arrayOfParameters = np.linspace(0.001, 0.5, 20)
+    arrayOfParameters = np.linspace(0.001, 1.0, 30)
 
     timesNs = np.linspace(0, maxTime, totalPoints)
 

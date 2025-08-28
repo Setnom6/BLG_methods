@@ -381,7 +381,7 @@ class DynamicsManager:
 
     @staticmethod
     def schriefferWolff(H_full, collapseOp = None):
-        N0 = 5
+        N0 = 4
         N1 = 6
         subspace_indices = [0]*N0 + [1]*N1
         H0_tot = H_full[:N0+N1, :N0+N1]
