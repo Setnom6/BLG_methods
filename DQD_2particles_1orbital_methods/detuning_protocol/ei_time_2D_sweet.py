@@ -21,7 +21,7 @@ def runDynamics(detuning, parameters, times, cutOffN, dephasing, spinRelaxation)
         params[DQDParameters.E_I.value] = detuning
         DM = DynamicsManager(params)
         populations =  DM.simpleTimeEvolution(times, cutOffN=cutOffN, dephasing=dephasing, spinRelaxation=spinRelaxation)
-        return DM.getCurrent(populations)
+        return DM.getCurrent(populations, cutOff=cutOffN)
 
 
 # ---------------- freq estimation ----------------

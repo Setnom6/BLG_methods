@@ -265,23 +265,47 @@ class DynamicsManager:
             "method": 'bdf'
         }
     
-    def getCurrent(self, populations):
+    def getCurrent(self, populations, cutOff=None):
         I_t = []
-        for population in populations:
-            totalPopulation = (
-                population[self.invCorrespondence["LL,S,T-"]]
-                + population[self.invCorrespondence["LR,S,T-"]]
-                + population[self.invCorrespondence["LR,T+,T-"]]
-                + population[self.invCorrespondence["LR,T0,T-"]]
-                + population[self.invCorrespondence["LR,T-,T-"]]
-            )
 
-            I = (
-                population[self.invCorrespondence["LL,S,T-"]]
-                + population[self.invCorrespondence["LR,S,T-"]]
-            ) / totalPopulation
+        if cutOff is not None:
+            antisymmetricIndices = [
+                    self.invCorrespondence['LR,T-,T-'],
+                    self.invCorrespondence['LR,T0,T-'],
+                    self.invCorrespondence['LR,T-,T0'],
+                    self.invCorrespondence['LR,T+,T-'],
+                    self.invCorrespondence['LR,T0,T0'],
+                    self.invCorrespondence['LR,T+,T0'],
+                    self.invCorrespondence['LR,T0,T+'],
+                    self.invCorrespondence['LR,T+,T+'],
+                    self.invCorrespondence['LR,S,S'],
+                    self.invCorrespondence['LR,T-,T+'],
+                ]
 
-            I_t.append(I.real)
+            symmetricIndices = [i for i in range(0,28) if i not in antisymmetricIndices]
+
+            antisymmetricIndicesCutOff = [i for i in antisymmetricIndices if i < cutOff]
+            symmetricIndicesCutOff = [i for i in symmetricIndices if i < cutOff]
+            for population in populations:
+                totalPopulation = np.sum([population[idx] for idx in antisymmetricIndicesCutOff]) + np.sum([population[idx] for idx in symmetricIndicesCutOff])
+                I  = np.sum([population[idx] for idx in symmetricIndicesCutOff])
+                I_t.append(I.real)
+                
+        else:
+            for population in populations:
+                totalPopulation = (
+                    population[self.invCorrespondence["LL,S,T-"]]
+                    + population[self.invCorrespondence["LR,S,T-"]]
+                    + population[self.invCorrespondence["LR,T0,T-"]]
+                    + population[self.invCorrespondence["LR,T-,T-"]]
+                )
+
+                I = (
+                    population[self.invCorrespondence["LL,S,T-"]]
+                    + population[self.invCorrespondence["LR,S,T-"]]
+                ) / totalPopulation
+
+                I_t.append(I.real)
 
         return np.array(I_t)
     

@@ -18,7 +18,7 @@ def runDynamics(detuning, parameters, times, cutOffN, dephasing, spinRelaxation)
         params[DQDParameters.E_I.value] = detuning
         DM = DynamicsManager(params)
         populations =  DM.simpleTimeEvolution(times, cutOffN=cutOffN, dephasing=dephasing, spinRelaxation=spinRelaxation)
-        return DM.getCurrent(populations)
+        return DM.getCurrent(populations, cutOff=cutOffN)
 
 
 # ---------------- freq estimation ----------------
@@ -121,7 +121,7 @@ def monteCarloFreqVarianceAtDetuning(detuningValue, parameters, times, cutOffN, 
         params[DQDParameters.E_I.value] = epsSample
         DM = DynamicsManager(params)
         pops = DM.simpleTimeEvolution(times, cutOffN=cutOffN, dephasing=dephasing, spinRelaxation=spinRelaxation)
-        sig = DM.getCurrent(pops)
+        sig = DM.getCurrent(pops, cutOff=cutOffN)
         return estimateRabiFrequency(sig, times)
     numCores = min(cpu_count(), 16)
     freqs = Parallel(n_jobs=numCores)(delayed(singleSample)() for _ in range(nSamples))
@@ -177,16 +177,16 @@ if __name__ == "__main__":
 
 
 
-    maxTime = 5.0
+    maxTime = 1.5
     totalPoints = 600
     cutOffN = None
     dephasing = None
     spinRelaxation = None
 
-    detuningList = np.linspace(4.0, 6.0, totalPoints)
+    detuningList = np.linspace(4.4, 5.2, totalPoints)
 
     parameterToChange = DQDParameters.B_PARALLEL.value
-    arrayOfParameters = np.linspace(0.001, 1.0, 30)
+    arrayOfParameters = np.array([0.5])
 
     timesNs = np.linspace(0, maxTime, totalPoints)
 

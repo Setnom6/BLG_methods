@@ -34,11 +34,8 @@ def firstOrderNaif(H_full):
 
 # Fixed Parameters
 gOrtho = 10
-U0 = 8.5
-U1 = 0.1
 Ei = 8.25
 bx = 0.179
-gOrtho = 10
 interactionDetuning = 4.7638  # Interaction detuning in meV
 fixedParameters = {
             DQDParameters.B_FIELD.value: 1.50,
@@ -68,7 +65,7 @@ fixedParameters = {
 dqd = DQD_2particles_1orbital(fixedParameters)
 
 # Move detuning Ei
-eiValues = np.linspace(0.0, 1.2 * U0, 1000)
+eiValues = np.linspace(0.0, 1.2 * 6.0, 1000)
 allEigenvalues_full = []
 allEigenvalues_SWT = []
 allEigenvalues_naif = []
