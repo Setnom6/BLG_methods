@@ -30,11 +30,13 @@ def runSingleSimulation(idx, interactionTime, fixedParameters, expectedPeriod,
             intervalTimes, totalPoints, interactionDetuning=interactionDetuning
         )
 
-    populations = DM.detuningProtocol(
+    result = DM.detuningProtocol(
         tlistNano, eiValues, filter=filter,
         dephasing=dephasing, spinRelaxation=spinRelaxation,
         cutOffN=cutOffN, runOptions=runOptions
     )
+
+    populations = np.array([state.diag() for state in result.states])
 
     sumTriplet = (
         populations[-1, DM.invCorrespondence["LR,T0,T-"]] +

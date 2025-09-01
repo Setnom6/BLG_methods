@@ -58,8 +58,8 @@ if activateDephasing:
 
 tlistNano, eiValues = DM.obtainHahnEchoParameters(expectedPeriod, totalPoints, interactionDetuning=interactionDetuning)
 
-populations = DM.detuningProtocol(tlistNano, eiValues, filter=filter, dephasing=dephasing, spinRelaxation=spinRelaxation, cutOffN=cutOffN, runOptions=runOptions)
-
+result = DM.detuningProtocol(tlistNano, eiValues, filter=filter, dephasing=dephasing, spinRelaxation=spinRelaxation, cutOffN=cutOffN, runOptions=runOptions)
+populations = np.array([state.diag() for state in result.states])
 fig, (ax1, ax2, ax3) = plt.subplots(nrows=3, sharex=True, figsize=(10, 10), height_ratios=[3, 1, 1])
 
 title = "Population dynamics during Hahn Echo Protocol"

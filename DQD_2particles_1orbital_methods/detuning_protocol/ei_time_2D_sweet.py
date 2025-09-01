@@ -102,8 +102,8 @@ def computeRabiFrequencyMap():
     }
 
     maxTime = 7  # ns
-    totalPoints = 100  # Reducir para prueba, aumentar para mejor resolución
-    totalTimes = 300
+    totalPoints = 600  # Reducir para prueba, aumentar para mejor resolución
+    totalTimes = 600
     cutOffN = None
     dephasing = None
     spinRelaxation = None

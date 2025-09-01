@@ -177,8 +177,8 @@ if __name__ == "__main__":
 
 
 
-    maxTime = 1.5
-    totalPoints = 600
+    maxTime = 5.0
+    totalPoints = 2000
     cutOffN = None
     dephasing = None
     spinRelaxation = None
@@ -186,7 +186,7 @@ if __name__ == "__main__":
     detuningList = np.linspace(4.4, 5.2, totalPoints)
 
     parameterToChange = DQDParameters.B_PARALLEL.value
-    arrayOfParameters = np.array([0.5])
+    arrayOfParameters = np.array([0.1])
 
     timesNs = np.linspace(0, maxTime, totalPoints)
 

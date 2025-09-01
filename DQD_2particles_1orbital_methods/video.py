@@ -6,7 +6,7 @@ currentDir = os.path.dirname(os.path.abspath(__file__))
 
 baseName = "Projection"
 extension = ".png"
-outputGif = os.path.join(currentDir, "figures", "deltaKK.gif")
+outputGif = os.path.join(currentDir, "figures", "bz.gif")
 
 # Total GIF duration in seconds (uniformly distributed across all frames)
 totalDuration = 12.0

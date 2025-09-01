@@ -125,7 +125,7 @@ class DynamicsManager:
 
         # === Solve dynamics ===
         result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=collapseOpsEffQObj, options=runOptions)
-        return np.array([state.diag() for state in result.states])
+        return result
     
     def obtainOriginalProtocolParameters(self, intervalTimes, totalPoints, interactionDetuning=None):
         """
@@ -145,7 +145,7 @@ class DynamicsManager:
             interactionDetuning = self.fixedParameters[DQDParameters.E_I.value]
         eiIntervals = [0.0,
                     interactionDetuning,
-                    2.0 * self.fixedParameters[DQDParameters.U0.value]]
+                    1.5 * self.fixedParameters[DQDParameters.U0.value]]
         eiValues = np.concatenate([
             np.linspace(eiIntervals[0], eiIntervals[1], nValues[0], endpoint=False),
             np.full(nValues[1], eiIntervals[1]),
@@ -158,7 +158,7 @@ class DynamicsManager:
     def obtainInverseProtocolParameters(self, intervalTimes, totalPoints, interactionDetuning=None):
         """
         Inverse protocol is composed of a first sweep from high detuning to the interaction detuning E, 
-        then a plateau at the anticrossing point, a second sweep (quick or slow) to 2*E and finally a plateau at 2*E.
+        then a plateau at the anticrossing point, a second sweep (quick or slow) to 1.5*U0 and finally a plateau at 1.5*E.
         """
         tTotal = sum(intervalTimes)
         nValues = [int(intervalTimes[i] * totalPoints / tTotal) for i in range(4)]
@@ -171,15 +171,62 @@ class DynamicsManager:
 
         if interactionDetuning is None:
             interactionDetuning = self.fixedParameters[DQDParameters.E_I.value]
-        eiIntervals = [2.0* self.fixedParameters[DQDParameters.U0.value],
+        eiIntervals = [1.5* self.fixedParameters[DQDParameters.U0.value],
                     interactionDetuning,
-                    2.0 * self.fixedParameters[DQDParameters.U0.value]]
+                    1.5 * self.fixedParameters[DQDParameters.U0.value]]
         eiValues = np.concatenate([
             np.linspace(eiIntervals[0], eiIntervals[1], nValues[0], endpoint=False),
             np.full(nValues[1], eiIntervals[1]),
             np.linspace(eiIntervals[1], eiIntervals[2], nValues[2]),
             np.full(nValues[3], eiIntervals[2])
         ])
+
+        return tlistNano, eiValues
+    
+    def obtainGateZProtocolParameters(self, intervalTimes, totalPoints, interactionDetuning=None):
+            """
+            This protocol is composed of an initialization at 1.5*U0 detuning. Then a ramp down to interaction detuning E. 
+            In E, intervalTimes[1] plateau. The go back to 1.5*U0 for intervalTimes[2]/2 and go down again to E for intervalTimes[2]/2.
+            Stays again in E for intervalTimes[1]. Go up finally to 1.5*E for intervalTimes[2] and stays up for intervalTimes[3].
+            """
+
+            tTotal = intervalTimes[0] + 2*intervalTimes[1]+ 2*intervalTimes[2]+ intervalTimes[3]
+            nValues = [int(intervalTimes[0] * totalPoints / tTotal), int(intervalTimes[1] * totalPoints / tTotal), 
+                       int(intervalTimes[1] * totalPoints / (2*tTotal)), int(intervalTimes[1] * totalPoints / (2*tTotal)),
+                       int(intervalTimes[1] * totalPoints / tTotal), int(intervalTimes[2] * totalPoints / tTotal),
+                       int(intervalTimes[3] * totalPoints / tTotal)]
+            
+            tlistNano = np.concatenate([
+                np.linspace(0, intervalTimes[0], nValues[0], endpoint=False),
+                np.linspace(intervalTimes[0], intervalTimes[0] + intervalTimes[1], nValues[1], endpoint=False),
+                np.linspace(intervalTimes[0] + intervalTimes[1], intervalTimes[0] + intervalTimes[1] + intervalTimes[2]/2, nValues[2], endpoint=False),
+                np.linspace( intervalTimes[0] + intervalTimes[1] + intervalTimes[2]/2, intervalTimes[0] + intervalTimes[1] + intervalTimes[2], nValues[3], endpoint=False),
+                np.linspace( intervalTimes[0] + intervalTimes[1] + intervalTimes[2], intervalTimes[0] + 2*intervalTimes[1] + intervalTimes[2], nValues[4], endpoint=False),
+                np.linspace( intervalTimes[0] + 2*intervalTimes[1] + intervalTimes[2], intervalTimes[0] + 2*intervalTimes[1] + 2*intervalTimes[2], nValues[5], endpoint=False),
+                np.linspace( intervalTimes[0] + 2*intervalTimes[1] + 2*intervalTimes[2], tTotal, nValues[6])
+            ])
+
+            if interactionDetuning is None:
+                interactionDetuning = self.fixedParameters[DQDParameters.E_I.value]
+            eiIntervals = [1.5* self.fixedParameters[DQDParameters.U0.value],
+                        interactionDetuning]
+            eiValues = np.concatenate([
+                np.linspace(eiIntervals[0], eiIntervals[1], nValues[0], endpoint=False),
+                np.full(nValues[1], eiIntervals[1]),
+                np.linspace(eiIntervals[1], eiIntervals[0], nValues[2]),
+                np.linspace(eiIntervals[0], eiIntervals[1], nValues[3], endpoint=False),
+                np.full(nValues[4], eiIntervals[1]),
+                np.linspace(eiIntervals[1], eiIntervals[0], nValues[5]),
+                np.full(nValues[6], eiIntervals[0])
+            ])
+
+            return tlistNano, eiValues
+    
+    def obtainRabiOscillationParameters(self, interactionTime, totalPoints, interactionDetuning=None):
+        tlistNano = np.linspace(0,interactionTime,totalPoints)
+        if interactionDetuning is None:
+            interactionDetuning = self.fixedParameters[DQDParameters.E_I.value]
+        eiValues = np.array([1.5 * self.fixedParameters[DQDParameters.U0.value]] + [interactionDetuning for _ in range(len(tlistNano)-1)])
 
         return tlistNano, eiValues
     
