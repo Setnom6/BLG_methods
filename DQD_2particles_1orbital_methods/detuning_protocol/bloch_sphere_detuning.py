@@ -1,21 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, FFMpegWriter, PillowWriter
-from qutip import Qobj, Bloch
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
-import sys
-import os
-import logging
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from src.DynamicsManager import DynamicsManager, DQDParameters, setupLogger
-
-
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation, FFMpegWriter, PillowWriter
-from qutip import Qobj, Bloch
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+from qutip import Bloch
 import sys
 import os
 import logging
@@ -25,50 +11,17 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.DynamicsManager import DynamicsManager, DQDParameters, setupLogger
 
 
-def densityToSTQubit(rho4, iSym, iAnti):
-    """Project a 4x4 density matrix onto {|S>,|T>} qubit basis."""
-    if isinstance(rho4, Qobj):
-        rho = rho4.full()
-    else:
-        rho = np.asarray(rho4, dtype=complex)
-    s, t = np.array(iSym), np.array(iAnti)
-
-    rhoSS = np.trace(rho[np.ix_(s, s)])
-    rhoTT = np.trace(rho[np.ix_(t, t)])
-    rhoST = np.sum(rho[np.ix_(s, t)])
-    rhoTS = np.conjugate(rhoST)
-
-    rho2 = np.array([[rhoSS, rhoST],
-                     [rhoTS, rhoTT]], dtype=complex)
-    rho2 /= np.trace(rho2)
-    return rho2
-
-
-def rho2ToBloch(rho2):
-    """Return Bloch vector (sx, sy, sz)."""
-    rho01 = rho2[0, 1]
-    sx = 2*np.real(rho01)
-    sy = -2*np.imag(rho01)
-    sz = np.real(rho2[0, 0] - rho2[1, 1])
-    blochVec =  np.array([sx, sy, sz], dtype=float)
-    # Clip if norm slightly exceeds 1 (numerical errors / projection artifacts)
-    r = np.linalg.norm(blochVec)
-    if r > 1.0:
-        blochVec = blochVec / r
-
-    return blochVec
-
-
 def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
-                   outFile="st_qubit.mp4", cutOffN=None):
-    """Animate Bloch vector and show static plots alongside it."""
+                   outFile="st_qubit.mp4", cutOffN=None,
+                   nFrames=300, fps=25):
+    """Animate Bloch vector and show static plots alongside it (optimizado)."""
 
     # --- Precompute Bloch vectors
     rhos = result.states if hasattr(result, "states") else result
     blochVectors = []
     for rho in rhos:
-        rho2 = densityToSTQubit(rho, iSym, iAnti)
-        blochVectors.append(rho2ToBloch(rho2))
+        rho2 = DM.densityToSTQubit(rho, iSym, iAnti)
+        blochVectors.append(DM.rho2ToBloch(rho2))
     blochVectors = np.array(blochVectors)
 
     # --- Compute populations
@@ -79,76 +32,52 @@ def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
     )
 
     # Qubit populations
-    sumTriplet = (
-        populations[:, DM.invCorrespondence["LR,T0,T-"]] +
-        populations[:, DM.invCorrespondence["LR,T-,T-"]]
-    )
-    sumSinglet = (
-        populations[:, DM.invCorrespondence["LL,S,T-"]] +
-        populations[:, DM.invCorrespondence["LR,S,T-"]]
-    )
-    sum4States = sumTriplet + sumSinglet
+    sumSinglet, sumTriplet, sum4States = DM.getSingletTripletPopulations(populations, cutOff=cutOffN)
 
-    # --- Create figure with 3 rows, 2 columns
+    # --- Create figure
     fig = plt.figure(figsize=(12, 10))
-    gs = fig.add_gridspec(3, 2, height_ratios=[1.0, 0.3, 1.0])  # achicar fila del medio
+    gs = fig.add_gridspec(3, 2, height_ratios=[1.0, 0.3, 1.0])
 
-    ax1 = fig.add_subplot(gs[0, 0])  # Poblaciones individuales
-    ax_legend = fig.add_subplot(gs[1, 0])  # Solo para leyenda
+    ax1 = fig.add_subplot(gs[0, 0])  # Individual populations
+    ax_legend = fig.add_subplot(gs[1, 0]) 
     ax2 = fig.add_subplot(gs[2, 0])  # Sweep detuning
-    ax3 = fig.add_subplot(gs[0, 1])  # Poblaciones qubit
-    ax4 = fig.add_subplot(gs[1:, 1], projection="3d")  # Bloch sphere ocupa dos filas
+    ax3 = fig.add_subplot(gs[0, 1])  # Qubit populations
+    ax4 = fig.add_subplot(gs[1:, 1], projection="3d")  # Bloch sphere
 
     # --- Plot static curves
-    # Poblaciones individuales
-    lines = []
-    labels = []
+    lines, labels = [], []
     for label in statesToPlot:
         index = DM.invCorrespondence[label]
         line, = ax1.plot(tlistNano, populations[:, index], label=label)
-        lines.append(line)
-        labels.append(label)
-    ax1.set_ylabel('Population')
-    ax1.set_title("Individual populations")
-    ax1.grid()
+        lines.append(line); labels.append(label)
+    ax1.set_ylabel('Population'); ax1.set_title("Individual populations"); ax1.grid()
+    ax_legend.axis("off"); ax_legend.legend(lines, labels, loc="center", ncol=2)
 
-    # Leyenda debajo
-    ax_legend.axis("off")
-    ax_legend.legend(lines, labels, loc="center", ncol=2)
-
-    # Sweep detuning
     ax2.plot(tlistNano, eiValues, color='black', linewidth=2)
-    ax2.set_ylabel(r'$E_I$ (meV)')
-    ax2.set_xlabel("Time (ns)")
-    ax2.set_title('Detuning sweep')
-    ax2.grid()
+    ax2.set_ylabel(r'$E_I$ (meV)'); ax2.set_xlabel("Time (ns)")
+    ax2.set_title('Detuning sweep'); ax2.grid()
 
-    # Qubit populations
     ax3.plot(tlistNano, sumTriplet, label='T (antisym)', linestyle='--', color='tab:blue')
     ax3.plot(tlistNano, sumSinglet, label='S (sym)', linestyle='--', color='tab:green')
     ax3.plot(tlistNano, sum4States, label='Total', linestyle='-', color='tab:red')
-    ax3.set_xlabel('Time (ns)')
-    ax3.set_ylabel('Populations')
+    ax3.set_xlabel('Time (ns)'); ax3.set_ylabel('Populations')
     ax3.set_title('Total populations in relevant subspace')
-    ax3.legend()
-    ax3.grid()
+    ax3.legend(); ax3.grid()
 
-    # --- Vertical lines that will move with time
+    # --- Vertical lines
     vline1 = ax1.axvline(x=tlistNano[0], color="red", linestyle=":")
     vline2 = ax2.axvline(x=tlistNano[0], color="red", linestyle=":")
     vline3 = ax3.axvline(x=tlistNano[0], color="red", linestyle=":")
 
     # --- Bloch sphere setup
     b = Bloch(fig=fig, axes=ax4)
-    b.vector_color = ["#1f77b4"]
-    b.point_color = ["#2ca02c"]
-    b.view = [-60, 30]
-    b.zlabel = [r"$|S\rangle$", r"$|T\rangle$"]
+    b.vector_color = ["#1f77b4"]; b.point_color = ["#2ca02c"]
+    b.view = [-60, 30]; b.zlabel = [r"$|S\rangle$", r"$|T\rangle$"]
 
     def drawBloch(i):
         b.clear()
         b.add_vectors(blochVectors[i])
-        k = max(0, i-15)
+        k = max(0, i-10)  # solo últimos 10 puntos
         b.add_points(blochVectors[k:i+1].T)
         b.make_sphere()
 
@@ -157,27 +86,31 @@ def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
         vline1.set_xdata([tlistNano[i], tlistNano[i]])
         vline2.set_xdata([tlistNano[i], tlistNano[i]])
         vline3.set_xdata([tlistNano[i], tlistNano[i]])
-        return ax4, vline1, vline2, vline3
+        return []
 
-    framesToSave = np.linspace(0, len(tlistNano)-1, 300 , dtype=int)  # 300 frames en lugar de 1800
-    ani = FuncAnimation(fig, update, frames=framesToSave, interval=80, blit=False)
+    # --- Submuestreo de frames
+    if nFrames < len(tlistNano):
+        framesToSave = np.linspace(0, len(tlistNano)-1, nFrames, dtype=int)
+    else:
+        framesToSave = range(len(tlistNano))
 
-    # --- Añadir timestamp al nombre del archivo
+    ani = FuncAnimation(fig, update, frames=framesToSave, interval=1000/fps, blit=False)
+
+    # --- Guardar con timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     root, ext = os.path.splitext(outFile)
-    outFileTimestamped = f"{root}_{timestamp}{ext}"
-    
+    outFileTimestamped = f"{root}_{timestamp}.mp4"
 
-    ani.save(outFileTimestamped.replace(".mp4", ".gif"), writer=PillowWriter(fps=10))
-
+    ani.save(outFileTimestamped.replace(".mp4", ".gif"), writer=PillowWriter(fps=fps))
     plt.close(fig)
     logging.info(f"Saved animation to {outFileTimestamped}")
-
 
 
 if __name__ == "__main__":
     gOrtho = 10
     interactionDetuning = 4.7638  # Interaction detuning in meV
+    expectedPeriod = 1.5416  # Expected period in ns
+
     fixedParameters = {
         DQDParameters.B_FIELD.value: 1.50,
         DQDParameters.B_PARALLEL.value: 0.1,
@@ -204,23 +137,22 @@ if __name__ == "__main__":
 
     DM = DynamicsManager(fixedParameters)
     setupLogger()
-
-    expectedPeriod = 1.5416  # Expected period in ns
-    
-
     logging.info(f"Running detuning protocol interaction...")
 
+    factor = 0.5
     slopesShapes = [
-        [interactionDetuning, interactionDetuning, 0.25*expectedPeriod],
-        [interactionDetuning, fixedParameters[DQDParameters.U0.value], 1.0*expectedPeriod],
-        [fixedParameters[DQDParameters.U0.value], fixedParameters[DQDParameters.U0.value], 1.0*expectedPeriod],
-        [fixedParameters[DQDParameters.U0.value], interactionDetuning, 1.0*expectedPeriod],
-        [interactionDetuning, interactionDetuning, 0.75*expectedPeriod], 
-        [interactionDetuning,fixedParameters[DQDParameters.U0.value], 1.0*expectedPeriod],
-        [fixedParameters[DQDParameters.U0.value],fixedParameters[DQDParameters.U0.value], 2.0*expectedPeriod],
+        [DM.fixedParameters[DQDParameters.U0.value], interactionDetuning, 1.0*expectedPeriod],
+        [interactionDetuning, interactionDetuning, 0.25 * expectedPeriod],
+        [interactionDetuning, DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
+        [DM.fixedParameters[DQDParameters.U0.value], DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
+        [DM.fixedParameters[DQDParameters.U0.value], interactionDetuning, factor * expectedPeriod],
+        [interactionDetuning, interactionDetuning, 0.75 * expectedPeriod],
+        [interactionDetuning, DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
+        [DM.fixedParameters[DQDParameters.U0.value], DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
     ]
 
-    initialStateDet = interactionDetuning
+    initialStateDet = None
+    initialStateBParallel = None
     totalPoints = 1200
     runOptions = DM.getRunOptions(atol=1e-8, rtol=1e-6, nsteps=10000)
     T1 = 100000
@@ -228,7 +160,6 @@ if __name__ == "__main__":
     activateDephasing = False
     activateSpinRelaxation = False
     cutOffN = None
-    filter = False
 
 
     spinRelaxation = None
@@ -243,9 +174,11 @@ if __name__ == "__main__":
     tlistNano, eiValues = DM.buildGenericProtocolParameters(slopesShapes, totalPoints)
 
     result = DM.detuningProtocol(
-        tlistNano, eiValues, filter=filter,
+        tlistNano, eiValues,
         dephasing=dephasing, spinRelaxation=spinRelaxation,
-        cutOffN=cutOffN, runOptions=runOptions, initialStateDetuning=2*interactionDetuning
+        cutOffN=cutOffN, runOptions=runOptions, 
+        initialStateDetuning=initialStateDet,
+        initialStateField=initialStateBParallel
     )
 
     logging.info("Detuning protocol completed.")

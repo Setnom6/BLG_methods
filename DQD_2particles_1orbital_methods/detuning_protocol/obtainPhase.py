@@ -4,32 +4,17 @@ from qutip import Qobj
 from joblib import Parallel, delayed, cpu_count
 import os
 import logging
+import sys
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.DynamicsManager import DynamicsManager, DQDParameters, setupLogger
-
-def densityToSTQubit(rho4, iSym, iAnti):
-    if isinstance(rho4, Qobj):
-        rho = rho4.full()
-    else:
-        rho = np.asarray(rho4, dtype=complex)
-    s, t = np.array(iSym), np.array(iAnti)
-
-    rhoSS = np.trace(rho[np.ix_(s, s)])
-    rhoTT = np.trace(rho[np.ix_(t, t)])
-    rhoST = np.sum(rho[np.ix_(s, t)])
-    rhoTS = np.conjugate(rhoST)
-
-    rho2 = np.array([[rhoSS, rhoST],
-                     [rhoTS, rhoTT]], dtype=complex)
-    rho2 /= np.trace(rho2)
-    return rho2
 
 def phiFromP0(p0):
     return 2 * np.arccos(np.sqrt(p0))
 
-def runSingleFactor(DM, expectedPeriod, interactionDetuning, factor, iSym, iAnti):
+def runSingleFactor(DM, expectedPeriod, interactionDetuning, factor):
     slopesShapes = [
-        [DM.fixedParameters[DQDParameters.U0.value], interactionDetuning, 1.0*expectedPeriod]
+        [DM.fixedParameters[DQDParameters.U0.value], interactionDetuning, 1.0*expectedPeriod],
         [interactionDetuning, interactionDetuning, 0.25 * expectedPeriod],
         [interactionDetuning, DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
         [DM.fixedParameters[DQDParameters.U0.value], DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
@@ -39,22 +24,50 @@ def runSingleFactor(DM, expectedPeriod, interactionDetuning, factor, iSym, iAnti
         [DM.fixedParameters[DQDParameters.U0.value], DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
     ]
 
+    initialStateDet = None
+    initialStateBParallel = None
     totalPoints = 1200
-    tlistNano, eiValues = DM.buildGenericProtocolParameters(slopesShapes, totalPoints)
-    bValues = np.zeros_like(tlistNano)
+    runOptions = DM.getRunOptions(atol=1e-8, rtol=1e-6, nsteps=10000)
+    T1 = 100000
+    T2star = 100000
+    activateDephasing = False
+    activateSpinRelaxation = False
+    cutOffN = None
 
-    result = DM.combinedProtocol(
-        tlistNano, bValues, eiValues,
-        dephasing=None, spinRelaxation=None,
-        cutOffN=None, runOptions=DM.getRunOptions()
+
+    spinRelaxation = None
+    dephasing = None
+    if activateSpinRelaxation:
+        spinRelaxation = DM.gammaFromTime(T1)
+    if activateDephasing:
+        dephasing = DM.gammaFromTime(T2star)
+
+    DM.fixedParameters["DecoherenceTime"] = DM.decoherenceTime(T2star, T1)
+
+    tlistNano, eiValues = DM.buildGenericProtocolParameters(slopesShapes, totalPoints)
+
+    result = DM.detuningProtocol(
+        tlistNano, eiValues,
+        dephasing=dephasing, spinRelaxation=spinRelaxation,
+        cutOffN=cutOffN, runOptions=runOptions, 
+        initialStateDetuning=initialStateDet,
+        initialStateField=initialStateBParallel
     )
 
     rhoFinal = result.states[-1]
-    rho2 = densityToSTQubit(rhoFinal, iSym, iAnti)
-    p0 = np.real(rho2[0, 0])
-    phi = phiFromP0(p0)
+    population = rhoFinal.diag()
+    p1 = (
+        population[DM.invCorrespondence["LR,T0,T-"]] +
+        population[DM.invCorrespondence["LR,T-,T-"]]
+    )
+    p0 = (
+        population[DM.invCorrespondence["LL,S,T-"]] +
+        population[DM.invCorrespondence["LR,S,T-"]]
+    )
 
-    return p0, phi
+    phi = phiFromP0(p0) * 180 / np.pi
+
+    return p0, p1, phi
 
 if __name__ == "__main__":
     interactionDetuning = 4.7638
@@ -88,33 +101,33 @@ if __name__ == "__main__":
     setupLogger()
     DM = DynamicsManager(fixedParameters)
 
-    iSym = [DM.invCorrespondence["LL,S,T-"], DM.invCorrespondence["LR,S,T-"]]
-    iAnti = [DM.invCorrespondence["LR,T0,T-"], DM.invCorrespondence["LR,T-,T-"]]
-
-    factors = np.linspace(0.01, 1.0, 20) 
+    factors = np.linspace(0.01, 1.0, 100) 
 
     # --- Paralelizar la simulación
     maxCores = min(24, cpu_count())
-    results = Parallel(n_jobs=maxCores)(delayed(runSingleFactor)(DM, expectedPeriod, interactionDetuning, f, iSym, iAnti) 
+    logging.info(f"Using {maxCores} cores with joblib.")
+    results = Parallel(n_jobs=maxCores)(delayed(runSingleFactor)(DM, expectedPeriod, interactionDetuning, f) 
                                   for f in factors)
 
-    resultsP0, resultsPhi = zip(*results)
+    resultsP0, resultsP1, resultsPhi = zip(*results)
     xValues = 6 * factors  # normalizado por expectedPeriod
 
     # --- Graficar
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8))
     ax1.plot(xValues, resultsP0, "o-", label="Final P0")
-    ax1.set_xlabel("6 * factor")
-    ax1.set_ylabel("Final P0")
+    ax1.plot(xValues, resultsP1, "o-", label="Final P1")
+    ax1.set_xlabel("Accumulated time / period")
+    ax1.set_ylabel("Final Population")
     ax1.legend()
     ax1.grid()
 
     ax2.plot(xValues, resultsPhi, "s-", color="tab:red", label="Phi")
-    ax2.set_xlabel("6 * factor")
-    ax2.set_ylabel("Phi (rad)")
-    ax2.set_ylim(0, np.pi)
+    ax2.set_xlabel("Accumulated time / period")
+    ax2.set_ylabel("Phi (grad)")
+    ax2.set_ylim(0, 360)
     ax2.legend()
     ax2.grid()
 
     plt.tight_layout()
-    plt.show()
+    DM.saveResults(name="Phase_iteration")
+    logging.info(f"Simulations completed.\n")

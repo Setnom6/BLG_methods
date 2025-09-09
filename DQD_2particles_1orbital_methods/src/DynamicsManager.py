@@ -71,7 +71,7 @@ class DynamicsManager:
         return np.array([state.diag() for state in result.states]) # We keep the populations
 
 
-    def detuningProtocol(self, tlistNano, eiValues, cutOffN=None, filter=False, dephasing = None, spinRelaxation = None, runOptions=None, initialStateDetuning=None):
+    def detuningProtocol(self, tlistNano, eiValues, cutOffN=None, dephasing = None, spinRelaxation = None, runOptions=None, initialStateDetuning=None, initialStateField=None):
         """
         Executes a detuning protocol bein agnostic to the sweep shape.
         """
@@ -79,22 +79,12 @@ class DynamicsManager:
         tlist = self.nsToMeV * tlistNano
 
         # --- Initial state ---
+        if initialStateField is None:
+            initialStateField = self.fixedParameters[DQDParameters.B_PARALLEL.value]
         if initialStateDetuning is None:
-            rho0 = self.obtainInitialGroundState(detuning=eiValues[0], bField = self.fixedParameters[DQDParameters.B_PARALLEL.value],cutOffN=cutOffN)
-        else:
-            rho0 = self.obtainInitialGroundState(detuning=initialStateDetuning, bField = self.fixedParameters[DQDParameters.B_PARALLEL.value] ,cutOffN=cutOffN)
-
-        if filter:
-            # === Apply physical limitations ===
-
-            # 2) Multi-stage low-pass (e.g. 8 MHz at 4K, 25 MHz at 300K)
-            eiValues = applyMultiStageLowPass(eiValues, tlistNano, fcListMHz=(8.0, 25.0), perStageOrder=1)
-
-            # 5) DAC quantization (14-bit AWG)
-            eiValues = applyQuantization(eiValues, nBits=14)
-
-            # 6) Add Gaussian noise (~2 μeV rms)
-            eiValues = addGaussianNoise(eiValues, sigma=0.002)
+            initialStateDetuning = eiValues[0]
+        
+        rho0 = self.obtainInitialGroundState(detuning = initialStateDetuning, bField=initialStateField, cutOffN=cutOffN)
 
         # === Precompute effective Hamiltonians ===
         hEffList = []
@@ -113,23 +103,11 @@ class DynamicsManager:
             return hEffList[idx]
         
         # Get collapse operators which are the same for any detuning
-        collapseOps = []
-        if dephasing is not None:
-            collapseOps.extend(self._getProjectedDephasingOperators(dephasing))
-
-        if spinRelaxation is not None:
-            collapseOps.extend(self._getProjectedSpinRelaxationOperators(spinRelaxation))
-
-        if cutOffN is not None:
-            collapseOpsEff = [op[:cutOffN, :cutOffN] for op in collapseOps]
-        else:
-            _, collapseOpsEff = self.schriefferWolff(H_full, collapseOps)
-        collapseOpsEffQObj = [Qobj(op) for op in collapseOpsEff]
+        collapseOpsEffQObj = self._getAllCollapseOperators(dephasing, spinRelaxation, cutOffN, H_full)
 
         # === Solve dynamics ===
         result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=collapseOpsEffQObj, options=runOptions)
         return result
-
 
     def magneticFieldProtocol(self, tlistNano, bValues, cutOffN=None, dephasing = None, spinRelaxation = None, runOptions=None, initialStateField=None, initialStateDetuning=None):
         """
@@ -140,15 +118,11 @@ class DynamicsManager:
 
         # --- Initial state ---
         if initialStateField is None:
-            if initialStateDetuning is None:
-                rho0 = self.obtainInitialGroundState(detuning = self.fixedParameters[DQDParameters.E_I.value], bField=bValues[0], cutOffN=cutOffN)
-            else:
-                rho0 = self.obtainInitialGroundState(detuning = initialStateDetuning, bField=bValues[0], cutOffN=cutOffN)
-        else:
-            if initialStateDetuning is None:
-                rho0 = self.obtainInitialGroundState(detuning = self.fixedParameters[DQDParameters.E_I.value], bField=initialStateField, cutOffN=cutOffN)
-            else:
-                rho0 = self.obtainInitialGroundState(detuning = self.fixedParameters[DQDParameters.E_I.value], bField=initialStateField, cutOffN=cutOffN)
+            initialStateField = bValues[0]
+        if initialStateDetuning is None:
+            initialStateDetuning = self.fixedParameters[DQDParameters.E_I.value]
+        
+        rho0 = self.obtainInitialGroundState(detuning = initialStateDetuning, bField=initialStateField, cutOffN=cutOffN)
 
         # === Precompute effective Hamiltonians ===
         hEffList = []
@@ -167,18 +141,7 @@ class DynamicsManager:
             return hEffList[idx]
         
         # Get collapse operators which are the same for any detuning
-        collapseOps = []
-        if dephasing is not None:
-            collapseOps.extend(self._getProjectedDephasingOperators(dephasing))
-
-        if spinRelaxation is not None:
-            collapseOps.extend(self._getProjectedSpinRelaxationOperators(spinRelaxation))
-
-        if cutOffN is not None:
-            collapseOpsEff = [op[:cutOffN, :cutOffN] for op in collapseOps]
-        else:
-            _, collapseOpsEff = self.schriefferWolff(H_full, collapseOps)
-        collapseOpsEffQObj = [Qobj(op) for op in collapseOpsEff]
+        collapseOpsEffQObj = self._getAllCollapseOperators(dephasing, spinRelaxation, cutOffN, H_full)
 
         # === Solve dynamics ===
         result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=collapseOpsEffQObj, options=runOptions)
@@ -193,15 +156,11 @@ class DynamicsManager:
 
         # --- Initial state ---
         if initialStateField is None:
-            if initialStateDetuning is None:
-                rho0 = self.obtainInitialGroundState(detuning = self.fixedParameters[DQDParameters.E_I.value], bField=bValues[0], cutOffN=cutOffN)
-            else:
-                rho0 = self.obtainInitialGroundState(detuning = initialStateDetuning, bField=bValues[0], cutOffN=cutOffN)
-        else:
-            if initialStateDetuning is None:
-                rho0 = self.obtainInitialGroundState(detuning = self.fixedParameters[DQDParameters.E_I.value], bField=initialStateField, cutOffN=cutOffN)
-            else:
-                rho0 = self.obtainInitialGroundState(detuning = self.fixedParameters[DQDParameters.E_I.value], bField=initialStateField, cutOffN=cutOffN)
+            initialStateField = bValues[0]
+        if initialStateDetuning is None:
+            initialStateDetuning = eiValues[0]
+        
+        rho0 = self.obtainInitialGroundState(detuning = initialStateDetuning, bField=initialStateField, cutOffN=cutOffN)
 
         # === Precompute effective Hamiltonians ===
         hEffList = []
@@ -221,152 +180,11 @@ class DynamicsManager:
             return hEffList[idx]
         
         # Get collapse operators which are the same for any detuning
-        collapseOps = []
-        if dephasing is not None:
-            collapseOps.extend(self._getProjectedDephasingOperators(dephasing))
-
-        if spinRelaxation is not None:
-            collapseOps.extend(self._getProjectedSpinRelaxationOperators(spinRelaxation))
-
-        if cutOffN is not None:
-            collapseOpsEff = [op[:cutOffN, :cutOffN] for op in collapseOps]
-        else:
-            _, collapseOpsEff = self.schriefferWolff(H_full, collapseOps)
-        collapseOpsEffQObj = [Qobj(op) for op in collapseOpsEff]
+        collapseOpsEffQObj = self._getAllCollapseOperators(dephasing, spinRelaxation, cutOffN, H_full)
 
         # === Solve dynamics ===
         result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=collapseOpsEffQObj, options=runOptions)
         return result
-
-    def obtainOriginalProtocolParameters(self, intervalTimes, totalPoints, interactionDetuning=None):
-        """
-        Original protocol is composed of a first sweep from 0 to the interaction detuning E, 
-        then a plateau at the anticrossing point, a second sweep (quick or slow) to 2*E and finally a plateau at 2*E.
-        """
-        tTotal = sum(intervalTimes)
-        nValues = [int(intervalTimes[i] * totalPoints / tTotal) for i in range(4)]
-        tlistNano = np.concatenate([
-            np.linspace(0, intervalTimes[0], nValues[0], endpoint=False),
-            np.linspace(intervalTimes[0], intervalTimes[0] + intervalTimes[1], nValues[1], endpoint=False),
-            np.linspace(intervalTimes[0] + intervalTimes[1], intervalTimes[0] + intervalTimes[1] + intervalTimes[2], nValues[2], endpoint=False),
-            np.linspace(intervalTimes[0] + intervalTimes[1] + intervalTimes[2], tTotal, nValues[3])
-        ])
-
-        if interactionDetuning is None:
-            interactionDetuning = self.fixedParameters[DQDParameters.E_I.value]
-        eiIntervals = [0.0,
-                    interactionDetuning,
-                    1.5 * self.fixedParameters[DQDParameters.U0.value]]
-        eiValues = np.concatenate([
-            np.linspace(eiIntervals[0], eiIntervals[1], nValues[0], endpoint=False),
-            np.full(nValues[1], eiIntervals[1]),
-            np.linspace(eiIntervals[1], eiIntervals[2], nValues[2]),
-            np.full(nValues[3], eiIntervals[2])
-        ])
-
-        return tlistNano, eiValues
-    
-    def obtainInverseProtocolParameters(self, intervalTimes, totalPoints, interactionDetuning=None):
-        """
-        Inverse protocol is composed of a first sweep from high detuning to the interaction detuning E, 
-        then a plateau at the anticrossing point, a second sweep (quick or slow) to 1.5*U0 and finally a plateau at 1.5*E.
-        """
-        tTotal = sum(intervalTimes)
-        nValues = [int(intervalTimes[i] * totalPoints / tTotal) for i in range(4)]
-        tlistNano = np.concatenate([
-            np.linspace(0, intervalTimes[0], nValues[0], endpoint=False),
-            np.linspace(intervalTimes[0], intervalTimes[0] + intervalTimes[1], nValues[1], endpoint=False),
-            np.linspace(intervalTimes[0] + intervalTimes[1], intervalTimes[0] + intervalTimes[1] + intervalTimes[2], nValues[2], endpoint=False),
-            np.linspace(intervalTimes[0] + intervalTimes[1] + intervalTimes[2], tTotal, nValues[3])
-        ])
-
-        if interactionDetuning is None:
-            interactionDetuning = self.fixedParameters[DQDParameters.E_I.value]
-        eiIntervals = [1.5* self.fixedParameters[DQDParameters.U0.value],
-                    interactionDetuning,
-                    1.5 * self.fixedParameters[DQDParameters.U0.value]]
-        eiValues = np.concatenate([
-            np.linspace(eiIntervals[0], eiIntervals[1], nValues[0], endpoint=False),
-            np.full(nValues[1], eiIntervals[1]),
-            np.linspace(eiIntervals[1], eiIntervals[2], nValues[2]),
-            np.full(nValues[3], eiIntervals[2])
-        ])
-
-        return tlistNano, eiValues
-    
-    def obtainGateZProtocolParametersWithSlope(self, intervalTimes, totalPoints, interactionDetuning=None):
-        """
-        Construye el protocolo Z con rampas y mesetas según la siguiente secuencia:
-
-        1. Inicialización en U0 durante intervalTimes[0].
-        2. Rampa descendente a detuning de interacción E.
-        3. Meseta en E durante intervalTimes[1] - 0.15.
-        4. Secuencia "ida y vuelta":
-            - Rampa E -> U0 en intervalTimes[2]/3
-            - Meseta en U0 en intervalTimes[2]/3
-            - Rampa U0 -> E en intervalTimes[2]/3
-        5. Nueva meseta en E durante 3*intervalTimes[4] - 0.15.
-        6. Rampa E -> U0 en intervalTimes[0].
-        7. Meseta final en U0 durante intervalTimes[3].
-        """
-
-        # Offsets en las mesetas de E
-        offset = 0.15
-        t0, t1, t2, t3, t4 = intervalTimes
-
-        # Tiempo total según la secuencia del docstring
-        tTotal = 2*t0 + (t1 - offset) + (t4 - offset) + t2 + t3
-
-        # Distribución de puntos proporcional a cada segmento
-        nValues = [
-            int(t0 * totalPoints / tTotal),              # inicialización
-            int((t1 - offset) * totalPoints / tTotal),   # meseta E reducida
-            int((0.1*t2) * totalPoints / tTotal),          # rampa E->U0
-            int((0.8*t2) * totalPoints / tTotal),          # meseta U0
-            int((0.1*t2) * totalPoints / tTotal),          # rampa U0->E
-            int((t4 - offset) * totalPoints / tTotal), # meseta E larga reducida
-            int(t0 * totalPoints / tTotal),              # rampa E->U0
-            int(t3 * totalPoints / tTotal)               # meseta final U0
-        ]
-
-        # Detuning de interacción
-        if interactionDetuning is None:
-            interactionDetuning = self.fixedParameters[DQDParameters.E_I.value]
-        U0 = self.fixedParameters[DQDParameters.U0.value]
-
-        # Construcción lista de tiempos
-        tlistNano = np.concatenate([
-            np.linspace(0, t0, nValues[0], endpoint=False),
-            np.linspace(t0, t0 + (t1 - offset), nValues[1], endpoint=False),
-            np.linspace(t0 + (t1 - offset),
-                        t0 + (t1 - offset) + 0.1*t2, nValues[2], endpoint=False),
-            np.linspace(t0 + (t1 - offset) + 0.1*t2,
-                        t0 + (t1 - offset) + 0.9*t2, nValues[3], endpoint=False),
-            np.linspace(t0 + (t1 - offset) + 0.9*t2,
-                        t0 + (t1 - offset) + t2, nValues[4], endpoint=False),
-            np.linspace(t0 + (t1 - offset) + t2,
-                        t0 + (t1 - offset) + t2 + (t4 - offset), nValues[5], endpoint=False),
-            np.linspace(t0 + (t1 - offset) + t2 + (t4 - offset),
-                        t0 + (t1 - offset) + t2 + (t4 - offset) + t0, nValues[6], endpoint=False),
-            np.linspace(2*t0 + (t1 - offset) + t2 + (t4 - offset),
-                        tTotal, nValues[7])
-        ])
-
-        # Construcción lista de valores de detuning
-        eiValues = np.concatenate([
-            np.linspace(U0, interactionDetuning, nValues[0], endpoint=False), # arranque en 2U0
-            np.full(nValues[1], interactionDetuning),                             # meseta E reducida
-            np.linspace(interactionDetuning, U0, nValues[2]),                     # rampa E->U0
-            np.full(nValues[3], U0),                                              # meseta U0
-            np.linspace(U0, interactionDetuning, nValues[4]),                     # rampa U0->E
-            np.full(nValues[5], interactionDetuning),                             # meseta E larga reducida
-            np.linspace(interactionDetuning, U0, nValues[6]),                     # rampa E->U0
-            np.full(nValues[7], U0)                                               # meseta final U0
-        ])
-
-        return tlistNano, eiValues
-
-
 
     def buildGenericProtocolParameters(self, listSlopes, totalPoints):
         """
@@ -388,7 +206,7 @@ class DynamicsManager:
         nValues = [max(1, int(seg[2] * totalPoints / totalTime)) for seg in listSlopes]
         
         tlistNano = []
-        eiValues = []
+        parameterValues = []
         tAcc = 0.0  # accumulated time
         
         for seg, nPoints in zip(listSlopes, nValues):
@@ -409,93 +227,50 @@ class DynamicsManager:
                 eSegment = np.linspace(detStart, detEnd, nPoints, endpoint=False)
             
             tlistNano.append(tSegment)
-            eiValues.append(eSegment)
+            parameterValues.append(eSegment)
             
             tAcc = tEnd  # update accumulated time for next segment
         
         # Concatenate all segments
         tlistNano = np.concatenate(tlistNano)
-        eiValues = np.concatenate(eiValues)
+        parameterValues = np.concatenate(parameterValues)
         
-        return tlistNano, eiValues
-
+        return tlistNano, parameterValues
     
-    def obtainRabiOscillationParameters(self, interactionTime, totalPoints, interactionDetuning=None):
-        tlistNano = np.linspace(0,interactionTime,totalPoints)
-        if interactionDetuning is None:
-            interactionDetuning = self.fixedParameters[DQDParameters.E_I.value]
-        eiValues = np.array([1.5 * self.fixedParameters[DQDParameters.U0.value]] + [interactionDetuning for _ in range(len(tlistNano)-1)])
+    def densityToSTQubit(self, rho4, iSym, iAnti):
+        """
+        Project a NxN density matrix onto {|S>,|T>} qubit basis by disregarding internal coherences and maintaining coherences between the two subspaces.
+        The indices must be in agreement with the dimension of the density matrix given
+        """
+        if isinstance(rho4, Qobj):
+            rho = rho4.full()
+        else:
+            rho = np.asarray(rho4, dtype=complex)
+        s, t = np.array(iSym), np.array(iAnti)
 
-        return tlistNano, eiValues
+        rhoSS = np.trace(rho[np.ix_(s, s)])
+        rhoTT = np.trace(rho[np.ix_(t, t)])
+        rhoST = np.sum(rho[np.ix_(s, t)])
+        rhoTS = np.conjugate(rhoST)
+
+        rho2 = np.array([[rhoSS, rhoST],
+                        [rhoTS, rhoTT]], dtype=complex)
+        rho2 /= np.trace(rho2)
+        return rho2
     
-    def obtainHahnEchoParameters(self, expectedPeriod, totalPoints, interactionDetuning=None):
-        """
-        Generates parameters for a Hahn echo protocol with slopes.
+    def rho2ToBloch(self, rho2):
+        """Return Bloch vector (sx, sy, sz) from a 2x2 density matrix."""
+        rho01 = rho2[0, 1]
+        sx = 2*np.real(rho01)
+        sy = -2*np.imag(rho01)
+        sz = np.real(rho2[0, 0] - rho2[1, 1])
+        blochVec =  np.array([sx, sy, sz], dtype=float)
+        # Clip if norm slightly exceeds 1 (numerical errors / projection artifacts)
+        r = np.linalg.norm(blochVec)
+        if r > 1.0:
+            blochVec = blochVec / r
 
-        Protocol:
-            1. High detuning for 2*T
-            2. Slope down from high to interaction detuning for 1*T
-            3. Interaction detuning for 3*T + T/4
-            4. Slope up from interaction to high detuning for 1*T
-            5. High detuning for 1*T
-            6. Slope down from high to interaction detuning for 1*T
-            7. Interaction detuning for 3*T + T/2
-            8. Slope up from interaction to high detuning for 1*T
-            9. High detuning for 5*T
-        """
-
-        if interactionDetuning is None:
-            interactionDetuning = self.fixedParameters[DQDParameters.E_I.value]
-
-        highDetuning = 2.0 * self.fixedParameters[DQDParameters.U0.value]
-
-        # Blocks as (duration, targetValue, type)
-        blocks = [
-            (2 * expectedPeriod, highDetuning, "flat"),
-            (1 * expectedPeriod, interactionDetuning, "slope"),
-            (3 * expectedPeriod + expectedPeriod / 4, interactionDetuning, "flat"),
-            (1 * expectedPeriod, highDetuning, "slope"),
-            (1 * expectedPeriod, highDetuning, "flat"),
-            (1 * expectedPeriod, interactionDetuning, "slope"),
-            (3 * expectedPeriod + expectedPeriod / 2, interactionDetuning, "flat"),
-            (1 * expectedPeriod, highDetuning, "slope"),
-            (5 * expectedPeriod, highDetuning, "flat")
-        ]
-
-        # Total time
-        tTotal = sum(duration for duration, _, _ in blocks)
-
-        # Distribute points proportionally
-        rawValues = np.array([duration for duration, _, _ in blocks]) * totalPoints / tTotal
-        nValues = np.floor(rawValues).astype(int)
-        diff = totalPoints - np.sum(nValues)
-        if diff > 0:
-            for i in np.argsort(-(rawValues - nValues))[:diff]:
-                nValues[i] += 1
-
-        # Build time list
-        tlistNano = np.linspace(0, tTotal, totalPoints, endpoint=False)
-
-        # Build detuning values
-        eiValues = []
-        currentVal = highDetuning  # start at high detuning
-
-        for (n, (duration, targetVal, kind)) in zip(nValues, blocks):
-            if n == 0:
-                continue
-            if kind == "flat":
-                eiValues.append(np.full(n, targetVal))
-                currentVal = targetVal
-            elif kind == "slope":
-                eiValues.append(np.linspace(currentVal, targetVal, n, endpoint=False))
-                currentVal = targetVal
-            else:
-                raise ValueError(f"Unknown block type: {kind}")
-
-        eiValues = np.concatenate(eiValues)
-
-        return tlistNano, eiValues
-
+        return blochVec
 
 
     
@@ -553,6 +328,55 @@ class DynamicsManager:
                 I_t.append(I.real)
 
         return np.array(I_t)
+    
+    def getSingletTripletPopulations(self, populations, cutOff=None):
+        sumSinglet = []
+        sumTriplet = []
+        sumTotal = []
+
+        if cutOff is not None:
+            antisymmetricIndices = [
+                    self.invCorrespondence['LR,T-,T-'],
+                    self.invCorrespondence['LR,T0,T-'],
+                    self.invCorrespondence['LR,T-,T0'],
+                    self.invCorrespondence['LR,T+,T-'],
+                    self.invCorrespondence['LR,T0,T0'],
+                    self.invCorrespondence['LR,T+,T0'],
+                    self.invCorrespondence['LR,T0,T+'],
+                    self.invCorrespondence['LR,T+,T+'],
+                    self.invCorrespondence['LR,S,S'],
+                    self.invCorrespondence['LR,T-,T+'],
+                ]
+
+            symmetricIndices = [i for i in range(0,28) if i not in antisymmetricIndices]
+
+            antisymmetricIndicesCutOff = [i for i in antisymmetricIndices if i < cutOff]
+            symmetricIndicesCutOff = [i for i in symmetricIndices if i < cutOff]
+            for population in populations:
+                singletPopulation  = np.sum([population[idx] for idx in symmetricIndicesCutOff])
+                tripletPopulation = np.sum([population[idx] for idx in antisymmetricIndicesCutOff])
+
+                sumSinglet.append(singletPopulation.real)
+                sumTriplet.append(tripletPopulation.real)
+                sumTotal.append(singletPopulation.real + tripletPopulation.real)
+                
+        else:
+            for population in populations:
+                tripletPopulation = (
+                    population[self.invCorrespondence["LR,T0,T-"]]
+                    + population[self.invCorrespondence["LR,T-,T-"]]
+                )
+
+                singletPopulation = (
+                    population[self.invCorrespondence["LL,S,T-"]]
+                    + population[self.invCorrespondence["LR,S,T-"]]
+                )
+
+                sumSinglet.append(singletPopulation.real)
+                sumTriplet.append(tripletPopulation.real)
+                sumTotal.append(singletPopulation.real + tripletPopulation.real)
+
+        return np.array(sumSinglet), np.array(sumTriplet), np.array(sumTotal)
     
     
     def saveResults(self, populations=None, times=None, name=""):
@@ -616,6 +440,21 @@ class DynamicsManager:
             Li_proj = np.sqrt(gamma) * self.dqd.project_hamiltonian(self.basis, alternative_operator=Li)
             listOfOperators.append(Li_proj)
         return listOfOperators
+    
+    def _getAllCollapseOperators(self, dephasing, spinRelaxation, cutOffN, H_full):
+        collapseOps = []
+        if dephasing is not None:
+            collapseOps.extend(self._getProjectedDephasingOperators(dephasing))
+
+        if spinRelaxation is not None:
+            collapseOps.extend(self._getProjectedSpinRelaxationOperators(spinRelaxation))
+
+        if cutOffN is not None:
+            collapseOpsEff = [op[:cutOffN, :cutOffN] for op in collapseOps]
+        else:
+            _, collapseOpsEff = self.schriefferWolff(H_full, collapseOps)
+
+        return [Qobj(op) for op in collapseOpsEff]
     
 
     def gammaFromTime(self, t1_ns: float) -> float:
@@ -731,67 +570,6 @@ class DynamicsManager:
         transformed_H = np.ma.sum(H_tilde[:2, :2, :3], axis=2)
         
         return transformed_H[0, 0]
-
-
-
-    def obtainAlternativeProtocol2Parameters(self, intervalTimes, totalPoints):
-        """
-        Same protocol as the original but the anticrossing region is not a plateao but an slowly increasing function.
-        It allows to leave the anticrossing point smoothly.
-        """
-        tTotal = sum(intervalTimes)
-        nValues = [int(intervalTimes[i]*totalPoints/tTotal) for i in range(4)]
-
-        tlistNano = np.concatenate([
-        np.linspace(0, intervalTimes[0], nValues[0], endpoint=False),
-        np.linspace(intervalTimes[0], intervalTimes[0] + intervalTimes[1], nValues[1], endpoint=False),
-        np.linspace(intervalTimes[0] + intervalTimes[1], intervalTimes[0] + intervalTimes[1] + intervalTimes[2], nValues[2], endpoint=False),
-        np.linspace(intervalTimes[0] + intervalTimes[1] + intervalTimes[2], tTotal, nValues[3])
-        ])
-
-        eiIntervals = []
-        eiIntervals.append(0.0)
-        eiIntervals.append(self.fixedParameters[DQDParameters.E_I.value]*0.98) # The start and end point of the anticrossing can be stretched or ennahced here
-        eiIntervals.append(self.fixedParameters[DQDParameters.E_I.value]*1.02)
-        eiIntervals.append(2.0 * self.fixedParameters[DQDParameters.U0.value])
-
-        eiValues = np.concatenate([
-        np.linspace(eiIntervals[0], eiIntervals[1], nValues[0], endpoint=False),
-        np.linspace(eiIntervals[1], eiIntervals[2], nValues[1], endpoint=False),
-        np.linspace(eiIntervals[2], eiIntervals[3], nValues[2]),
-        np.full(nValues[3], eiIntervals[3])
-        ])
-
-        return tlistNano, eiValues
-    
-    def obtainAlternativeProtocol2Parameters(self, intervalTimes, totalPoints):
-        """
-        The detuning sweep starts with an slope from 0 to the anticrossing center.
-        Then stays in that point for the desired time for rabi oscillations
-        After that, it comes back to 0 detuning
-        """
-        tTotal = sum(intervalTimes)
-        nValues = [int(intervalTimes[i]*totalPoints/tTotal) for i in range(4)]
-
-        tlistNano = np.concatenate([
-        np.linspace(0, intervalTimes[0], nValues[0], endpoint=False),
-        np.linspace(intervalTimes[0], intervalTimes[0] + intervalTimes[1], nValues[1], endpoint=False),
-        np.linspace(intervalTimes[0] + intervalTimes[1], intervalTimes[0] + intervalTimes[1] + intervalTimes[2], nValues[2], endpoint=False),
-        np.linspace(intervalTimes[0] + intervalTimes[1] + intervalTimes[2], tTotal, nValues[3])
-        ])
-
-        eiIntervals = []
-        eiIntervals.append(0.0)
-        eiIntervals.append(self.fixedParameters[DQDParameters.E_I.value])
-
-        eiValues = np.concatenate([
-        np.linspace(eiIntervals[0], eiIntervals[1], nValues[0], endpoint=False),
-        np.full(nValues[1], eiIntervals[1]),
-        np.linspace(eiIntervals[1], eiIntervals[0], nValues[2]),
-        np.full(nValues[3], eiIntervals[0])
-        ])
-
-        return tlistNano, eiValues
     
 
     
