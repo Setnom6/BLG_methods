@@ -8,10 +8,10 @@ import logging
 
 
 gOrtho = 10
-interactionDetuning = 4.8039  # Interaction detuning in meV
+interactionDetuning = 4.7638  # Interaction detuning in meV
 fixedParameters = {
         DQDParameters.B_FIELD.value: 1.50,
-        DQDParameters.B_PARALLEL.value: 0.5,
+        DQDParameters.B_PARALLEL.value: 0.1,
         DQDParameters.E_I.value: interactionDetuning,
         DQDParameters.T.value: 0.05,
         DQDParameters.DELTA_SO.value: 0.066,
@@ -31,29 +31,30 @@ fixedParameters = {
         DQDParameters.A.value: 0.1,
         DQDParameters.P.value: 0.02,
         DQDParameters.J.value: 0.00075 / gOrtho,
-}
+    }
 
 DM = DynamicsManager(fixedParameters)
 setupLogger()
 
 logging.info("Running detuning protocol...")
 
-expectedPeriod = 0.3174  # Expected period in ns
+expectedPeriod = 1.5416  # Expected period in ns
 interactionTimes = [expectedPeriod*3, expectedPeriod*3.5]
 interactionStart = 3 * expectedPeriod
 
 
 for interactionTime in interactionTimes:
-    interactionEnd = interactionStart + interactionTime
-    intervalTimes = [interactionStart, interactionTime,
+    realInteractionTime = interactionTime-0.15
+    interactionEnd = interactionStart + realInteractionTime
+    intervalTimes = [interactionStart, realInteractionTime,
                          3*expectedPeriod, 1.5*expectedPeriod]
     totalPoints = 1000
     runOptions = DM.getRunOptions(atol=1e-8, rtol=1e-6, nsteps=10000)
-    T1 = 100000  # Spin relaxation time in ns
-    T2star = 100000  # Dephasing time in ns
+    T1 = 10  # Spin relaxation time in ns
+    T2star = 10  # Dephasing time in ns
     activateDephasing = False
     activateSpinRelaxation = False
-    cutOffN = 23
+    cutOffN = None
     filter = False
 
     inverseProtocol = True  # If True, the protocol is inverted (from high to low detuning)

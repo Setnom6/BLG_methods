@@ -59,7 +59,7 @@ def rho2ToBloch(rho2):
     return blochVec
 
 
-def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
+def animateSTQubit(result, tlistNano, iSym, iAnti, bValues, eiValues, DM,
                    outFile="st_qubit.mp4", cutOffN=None):
     """Animate Bloch vector and show static plots alongside it."""
 
@@ -116,12 +116,18 @@ def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
     ax_legend.axis("off")
     ax_legend.legend(lines, labels, loc="center", ncol=2)
 
-    # Sweep detuning
+    # Curva de detuning en eje y izquierdo
     ax2.plot(tlistNano, eiValues, color='black', linewidth=2)
-    ax2.set_ylabel(r'$E_I$ (meV)')
+    ax2.set_ylabel(r'Detuning (meV)', color='black')
     ax2.set_xlabel("Time (ns)")
-    ax2.set_title('Detuning sweep')
+    ax2.tick_params(axis='y', labelcolor='black')
     ax2.grid()
+
+    # Crear segundo eje y (derecha) para el campo magnético
+    ax2prime = ax2.twinx()
+    ax2prime.plot(tlistNano, bValues, color='red', linewidth=2)
+    ax2prime.set_ylabel(r'$b_x$ (T)', color='red')
+    ax2prime.tick_params(axis='y', labelcolor='red')
 
     # Qubit populations
     ax3.plot(tlistNano, sumTriplet, label='T (antisym)', linestyle='--', color='tab:blue')
@@ -178,9 +184,10 @@ def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
 if __name__ == "__main__":
     gOrtho = 10
     interactionDetuning = 4.7638  # Interaction detuning in meV
+    interactionMagneticField = 0.1
     fixedParameters = {
         DQDParameters.B_FIELD.value: 1.50,
-        DQDParameters.B_PARALLEL.value: 0.1,
+        DQDParameters.B_PARALLEL.value: interactionMagneticField,
         DQDParameters.E_I.value: interactionDetuning,
         DQDParameters.T.value: 0.05,
         DQDParameters.DELTA_SO.value: 0.066,
@@ -208,16 +215,39 @@ if __name__ == "__main__":
     expectedPeriod = 1.5416  # Expected period in ns
     
 
-    logging.info(f"Running detuning protocol interaction...")
+    logging.info(f"Running magnetic field protocol interaction...")
 
-    slopesShapes = [
-        [interactionDetuning, interactionDetuning, 0.25*expectedPeriod],
-        [interactionDetuning, fixedParameters[DQDParameters.U0.value], 1.0*expectedPeriod],
-        [fixedParameters[DQDParameters.U0.value], fixedParameters[DQDParameters.U0.value], 1.0*expectedPeriod],
-        [fixedParameters[DQDParameters.U0.value], interactionDetuning, 1.0*expectedPeriod],
-        [interactionDetuning, interactionDetuning, 0.75*expectedPeriod], 
-        [interactionDetuning,fixedParameters[DQDParameters.U0.value], 1.0*expectedPeriod],
-        [fixedParameters[DQDParameters.U0.value],fixedParameters[DQDParameters.U0.value], 2.0*expectedPeriod],
+    slopesShapesBField = [
+        [0.0, 0.0, 3.0*expectedPeriod],
+        [interactionMagneticField, interactionMagneticField, 3.25*expectedPeriod-0.15],
+        [0.0, 0.0, 0.5*expectedPeriod],
+        [0.0, 0.0, 2.0*expectedPeriod],
+        [0.0,0.0, 0.5*expectedPeriod],
+        [interactionMagneticField, interactionMagneticField, 3.75*expectedPeriod-0.15],
+        [0.0, 0.0, 3.0*expectedPeriod],
+        [0.0, 0.0, 3.0*expectedPeriod],
+    ]
+
+    """slopesShapesBField = [
+            [interactionMagneticField, interactionMagneticField, 3.0*expectedPeriod],
+            [interactionMagneticField, interactionMagneticField, 3.25*expectedPeriod-0.15],
+            [interactionMagneticField, interactionMagneticField, 0.5*expectedPeriod],
+            [interactionMagneticField, interactionMagneticField, 2.0*expectedPeriod],
+            [interactionMagneticField,interactionMagneticField, 0.5*expectedPeriod],
+            [interactionMagneticField, interactionMagneticField, 3.75*expectedPeriod-0.15],
+            [interactionMagneticField, interactionMagneticField, 3.0*expectedPeriod],
+            [interactionMagneticField, interactionMagneticField, 3.0*expectedPeriod],
+        ]"""
+
+    slopesShapesDetuning =  [
+        [fixedParameters[DQDParameters.U0.value], interactionDetuning, 3.0*expectedPeriod],
+        [interactionDetuning, interactionDetuning, 3.25*expectedPeriod-0.15],
+        [interactionDetuning, 1.15*interactionDetuning, 0.5*expectedPeriod],
+        [1.15*interactionDetuning, 1.15*interactionDetuning, 2.0*expectedPeriod],
+        [ 1.15*interactionDetuning, interactionDetuning, 0.5*expectedPeriod],
+        [interactionDetuning, interactionDetuning, 3.75*expectedPeriod-0.15],
+        [interactionDetuning, fixedParameters[DQDParameters.U0.value], 3.0*expectedPeriod],
+        [fixedParameters[DQDParameters.U0.value], fixedParameters[DQDParameters.U0.value], 3.0*expectedPeriod],
     ]
 
     initialStateDet = interactionDetuning
@@ -240,12 +270,13 @@ if __name__ == "__main__":
 
     DM.fixedParameters["DecoherenceTime"] = DM.decoherenceTime(T2star, T1)
 
-    tlistNano, eiValues = DM.buildGenericProtocolParameters(slopesShapes, totalPoints)
+    tlistNano, bValues = DM.buildGenericProtocolParameters(slopesShapesBField, totalPoints)
+    tlistNano, eiValues = DM.buildGenericProtocolParameters(slopesShapesDetuning, totalPoints)
 
-    result = DM.detuningProtocol(
-        tlistNano, eiValues, filter=filter,
+    result = DM.combinedProtocol(
+        tlistNano, bValues, eiValues,
         dephasing=dephasing, spinRelaxation=spinRelaxation,
-        cutOffN=cutOffN, runOptions=runOptions, initialStateDetuning=2*interactionDetuning
+        cutOffN=cutOffN, runOptions=runOptions
     )
 
     logging.info("Detuning protocol completed.")
@@ -253,6 +284,6 @@ if __name__ == "__main__":
     iSym = [DM.invCorrespondence["LL,S,T-"], DM.invCorrespondence["LR,S,T-"]]
     iAnti = [DM.invCorrespondence["LR,T0,T-"], DM.invCorrespondence["LR,T-,T-"]]
 
-    animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
+    animateSTQubit(result, tlistNano, iSym, iAnti, bValues, eiValues, DM,
                        outFile=os.path.join(DM.figuresDir, 'bloch_animation.gif'),
                        cutOffN=cutOffN)

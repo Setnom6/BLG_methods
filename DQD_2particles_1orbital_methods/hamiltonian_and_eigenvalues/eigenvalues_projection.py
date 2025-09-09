@@ -12,7 +12,7 @@ gOrtho = 10
 interactionDetuning = 4.7638  # Interaction detuning in meV
 fixedParameters = {
             DQDParameters.B_FIELD.value: 1.50,
-            DQDParameters.B_PARALLEL.value: 0.1,
+            DQDParameters.B_PARALLEL.value: 0.5,
             DQDParameters.E_I.value: interactionDetuning,
             DQDParameters.T.value: 0.05,
             DQDParameters.DELTA_SO.value: 0.066,

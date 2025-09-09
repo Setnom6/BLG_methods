@@ -118,9 +118,9 @@ def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
 
     # Sweep detuning
     ax2.plot(tlistNano, eiValues, color='black', linewidth=2)
-    ax2.set_ylabel(r'$E_I$ (meV)')
+    ax2.set_ylabel(r'$b_x$ (T)')
     ax2.set_xlabel("Time (ns)")
-    ax2.set_title('Detuning sweep')
+    ax2.set_title('Magnetic field sweep')
     ax2.grid()
 
     # Qubit populations
@@ -159,7 +159,7 @@ def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
         vline3.set_xdata([tlistNano[i], tlistNano[i]])
         return ax4, vline1, vline2, vline3
 
-    framesToSave = np.linspace(0, len(tlistNano)-1, 300 , dtype=int)  # 300 frames en lugar de 1800
+    framesToSave = np.linspace(0, len(tlistNano)-1, 100 , dtype=int)  # 300 frames en lugar de 1800
     ani = FuncAnimation(fig, update, frames=framesToSave, interval=80, blit=False)
 
     # --- Añadir timestamp al nombre del archivo
@@ -168,7 +168,7 @@ def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
     outFileTimestamped = f"{root}_{timestamp}{ext}"
     
 
-    ani.save(outFileTimestamped.replace(".mp4", ".gif"), writer=PillowWriter(fps=10))
+    ani.save(outFileTimestamped.replace(".mp4", ".gif"), writer=PillowWriter(fps=15))
 
     plt.close(fig)
     logging.info(f"Saved animation to {outFileTimestamped}")
@@ -178,9 +178,10 @@ def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
 if __name__ == "__main__":
     gOrtho = 10
     interactionDetuning = 4.7638  # Interaction detuning in meV
+    interactionMagneticField = 0.1
     fixedParameters = {
         DQDParameters.B_FIELD.value: 1.50,
-        DQDParameters.B_PARALLEL.value: 0.1,
+        DQDParameters.B_PARALLEL.value: interactionMagneticField,
         DQDParameters.E_I.value: interactionDetuning,
         DQDParameters.T.value: 0.05,
         DQDParameters.DELTA_SO.value: 0.066,
@@ -208,16 +209,14 @@ if __name__ == "__main__":
     expectedPeriod = 1.5416  # Expected period in ns
     
 
-    logging.info(f"Running detuning protocol interaction...")
+    logging.info(f"Running magnetic field protocol interaction...")
 
     slopesShapes = [
-        [interactionDetuning, interactionDetuning, 0.25*expectedPeriod],
-        [interactionDetuning, fixedParameters[DQDParameters.U0.value], 1.0*expectedPeriod],
-        [fixedParameters[DQDParameters.U0.value], fixedParameters[DQDParameters.U0.value], 1.0*expectedPeriod],
-        [fixedParameters[DQDParameters.U0.value], interactionDetuning, 1.0*expectedPeriod],
-        [interactionDetuning, interactionDetuning, 0.75*expectedPeriod], 
-        [interactionDetuning,fixedParameters[DQDParameters.U0.value], 1.0*expectedPeriod],
-        [fixedParameters[DQDParameters.U0.value],fixedParameters[DQDParameters.U0.value], 2.0*expectedPeriod],
+        [0.0, 0.0, 3.0*expectedPeriod],
+        [0.0, interactionMagneticField, 1.5*expectedPeriod],
+        [interactionMagneticField, interactionMagneticField, 3.0*expectedPeriod-0.15],
+        [interactionMagneticField, 0.0, 1.5*expectedPeriod],
+        [0.0, 0.0, 3.0*expectedPeriod],
     ]
 
     initialStateDet = interactionDetuning
@@ -240,12 +239,12 @@ if __name__ == "__main__":
 
     DM.fixedParameters["DecoherenceTime"] = DM.decoherenceTime(T2star, T1)
 
-    tlistNano, eiValues = DM.buildGenericProtocolParameters(slopesShapes, totalPoints)
+    tlistNano, bValues = DM.buildGenericProtocolParameters(slopesShapes, totalPoints)
 
-    result = DM.detuningProtocol(
-        tlistNano, eiValues, filter=filter,
+    result = DM.magneticFieldProtocol(
+        tlistNano, bValues,
         dephasing=dephasing, spinRelaxation=spinRelaxation,
-        cutOffN=cutOffN, runOptions=runOptions, initialStateDetuning=2*interactionDetuning
+        cutOffN=cutOffN, runOptions=runOptions
     )
 
     logging.info("Detuning protocol completed.")
@@ -253,6 +252,6 @@ if __name__ == "__main__":
     iSym = [DM.invCorrespondence["LL,S,T-"], DM.invCorrespondence["LR,S,T-"]]
     iAnti = [DM.invCorrespondence["LR,T0,T-"], DM.invCorrespondence["LR,T-,T-"]]
 
-    animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
+    animateSTQubit(result, tlistNano, iSym, iAnti, bValues, DM,
                        outFile=os.path.join(DM.figuresDir, 'bloch_animation.gif'),
                        cutOffN=cutOffN)

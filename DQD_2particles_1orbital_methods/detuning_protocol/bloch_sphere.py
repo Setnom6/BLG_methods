@@ -50,7 +50,13 @@ def rho2ToBloch(rho2):
     sx = 2*np.real(rho01)
     sy = -2*np.imag(rho01)
     sz = np.real(rho2[0, 0] - rho2[1, 1])
-    return np.array([sx, sy, sz], dtype=float)
+    blochVec =  np.array([sx, sy, sz], dtype=float)
+    # Clip if norm slightly exceeds 1 (numerical errors / projection artifacts)
+    r = np.linalg.norm(blochVec)
+    if r > 1.0:
+        blochVec = blochVec / r
+
+    return blochVec
 
 
 def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues,
@@ -215,10 +221,10 @@ if __name__ == "__main__":
                          3*expectedPeriod, 1.5*expectedPeriod]
         totalPoints = 1000
         runOptions = DM.getRunOptions(atol=1e-8, rtol=1e-6, nsteps=10000)
-        T1 = 100000
-        T2star = 100000
-        activateDephasing = False
-        activateSpinRelaxation = False
+        T1 = 10
+        T2star = 5
+        activateDephasing = True
+        activateSpinRelaxation = True
         cutOffN = None
         filter = False
 

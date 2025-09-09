@@ -58,11 +58,11 @@ if __name__ == "__main__":
     logging.info("Starting simulations...")
 
     gOrtho = 10
-    interactionDetuning = 4.7638  # Interaction detuning in meV
+    interactionDetuningExpected = 4.7638 # Interaction detuning in meV
     fixedParameters = {
         DQDParameters.B_FIELD.value: 1.50,
         DQDParameters.B_PARALLEL.value: 0.1,
-        DQDParameters.E_I.value: interactionDetuning,
+        DQDParameters.E_I.value: interactionDetuningExpected,
         DQDParameters.T.value: 0.05,
         DQDParameters.DELTA_SO.value: 0.066,
         DQDParameters.DELTA_KK.value: 0.02,
@@ -108,10 +108,11 @@ if __name__ == "__main__":
 
     # Interaction times a explorar
     nPoints = 50
-    interactionTimesToScan = np.linspace(expectedPeriod*4.45, expectedPeriod*5.55, nPoints)
-    expectedMaxSinglet = 5.0
-    expectedMinSinglet = [4.5, 5.5]
-    operationalWindow = 0.1/expectedPeriod # Error in precision of 0.1 ns
+    interactionTime = expectedPeriod*5.5
+    expectedMaxTriplet = 1.0
+    operationalWindow = 0.001/interactionDetuningExpected # Error in precision of 1 micro eV
+
+    detuningsToScan = np.linspace(0.995*interactionDetuningExpected, 1.005*interactionDetuningExpected, nPoints)
 
     # ---------------- PARALLEL EXECUTION ----------------
     results = Parallel(n_jobs=-1)(
@@ -120,7 +121,7 @@ if __name__ == "__main__":
             interactionDetuning, inverseProtocol, filter, dephasing,
             spinRelaxation, cutOffN, runOptions
         )
-        for idx, interactionTime in enumerate(interactionTimesToScan)
+        for idx, interactionDetuning in enumerate(detuningsToScan)
     )
     # -----------------------------------------------------
 
@@ -131,7 +132,7 @@ if __name__ == "__main__":
     sumTriplet_list = np.array(sumTriplet_list)
 
     # Convertir interactionTimesToScan a múltiplos del periodo esperado
-    interactionTimesMultiples = interactionTimesToScan / expectedPeriod
+    interactionTimesMultiples = detuningsToScan / interactionDetuningExpected
 
     # Graficar dos figuras una encima de la otra, eje temporal común
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
@@ -139,13 +140,11 @@ if __name__ == "__main__":
     # Primera gráfica: sumas de singlete y triplete
     ax1.plot(interactionTimesMultiples, sumSinglet_list, marker='o', label='Singlet (current)', color='blue')
     ax1.plot(interactionTimesMultiples, sumTriplet_list, marker='o', label='Triplet (blockade)', color='orange')
-    ax1.axvline(x=expectedMaxSinglet, color='gray', linestyle='--', linewidth=1)
-    ax1.axvline(x=expectedMinSinglet[0], color='gray', linestyle=':', linewidth=1)
-    ax1.axvline(x=expectedMinSinglet[1], color='gray', linestyle=':', linewidth=1)
-    ax1.axvline(x=expectedMaxSinglet-operationalWindow/2.0, color='red', linestyle='--', linewidth=1)
-    ax1.axvline(x=expectedMaxSinglet+operationalWindow/2.0, color='red', linestyle='--', linewidth=1)
+    ax1.axvline(x=expectedMaxTriplet, color='gray', linestyle='--', linewidth=1)
+    ax1.axvline(x=expectedMaxTriplet-operationalWindow/2.0, color='red', linestyle='--', linewidth=1)
+    ax1.axvline(x=expectedMaxTriplet+operationalWindow/2.0, color='red', linestyle='--', linewidth=1)
     ax1.set_ylabel('Final population')
-    ax1.set_title('Sensitivity of final populations vs interaction time')
+    ax1.set_title('Sensitivity of final populations vs interaction detuning')
     ax1.legend()
     ax1.grid()
 
@@ -157,19 +156,16 @@ if __name__ == "__main__":
                  marker='o', label=label)
         
 
-    ax2.axvline(x=expectedMaxSinglet, color='gray', linestyle='--', linewidth=1)
-    ax2.axvline(x=expectedMinSinglet[0], color='gray', linestyle=':', linewidth=1)
-    ax2.axvline(x=expectedMinSinglet[1], color='gray', linestyle=':', linewidth=1)
-    ax2.axvline(x=expectedMaxSinglet-operationalWindow/2.0, color='red', linestyle='--', linewidth=1)
-    ax2.axvline(x=expectedMaxSinglet+operationalWindow/2.0, color='red', linestyle='--', linewidth=1)
-    ax2.set_xlabel('Interaction time / T_exp')
+    ax2.axvline(x=expectedMaxTriplet, color='gray', linestyle='--', linewidth=1)
+    ax2.axvline(x=expectedMaxTriplet-operationalWindow/2.0, color='red', linestyle='--', linewidth=1)
+    ax2.axvline(x=expectedMaxTriplet+operationalWindow/2.0, color='red', linestyle='--', linewidth=1)
+    ax2.set_xlabel('Interaction detuning / ER_exp')
     ax2.set_ylabel('Final population')
-    ax2.set_title(f'bx = {DMref.fixedParameters[ DQDParameters.B_PARALLEL.value]:.2f} T, E_R plateau = {interactionDetuning:.3f} meV, T_exp = {expectedPeriod:.3f} ns')
+    ax2.set_title(f'bx = {DMref.fixedParameters[ DQDParameters.B_PARALLEL.value]:.2f} T, ER_exp plateau = {interactionDetuningExpected:.3f} meV, T_exp = {expectedPeriod:.3f} ns')
     ax2.legend()
     ax2.grid()
 
     plt.tight_layout()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    plt.savefig(os.path.join(DMref.figuresDir, f'sensitivity_interaction_time_{timestamp}.png'))
+    plt.savefig(os.path.join(DMref.figuresDir, f'sensitivity_interaction_detuning_{timestamp}.png'))
     DMref.saveResults(name="Detuning_protocol_iteration")
-

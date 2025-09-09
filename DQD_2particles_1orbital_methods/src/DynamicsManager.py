@@ -42,7 +42,7 @@ class DynamicsManager:
 
     def simpleTimeEvolution(self, timesNs,  initialState: np.ndarray = None, cutOffN = None, dephasing = None, spinRelaxation = None, runOptions=None):
 
-        initialStateQobj = self.obtainInitialGroundState(cutOffN=cutOffN)
+        initialStateQobj = self.obtainInitialGroundState(cutOffN=cutOffN, detuning= self.fixedParameters[DQDParameters.E_I.value], bField = self.fixedParameters[DQDParameters.B_PARALLEL.value])
         if initialState is not None:
             initialStateQobj = Qobj(initialState)
         timesMeV = self.nsToMeV * timesNs
@@ -71,7 +71,7 @@ class DynamicsManager:
         return np.array([state.diag() for state in result.states]) # We keep the populations
 
 
-    def detuningProtocol(self, tlistNano, eiValues, cutOffN=None, filter=False, dephasing = None, spinRelaxation = None, runOptions=None):
+    def detuningProtocol(self, tlistNano, eiValues, cutOffN=None, filter=False, dephasing = None, spinRelaxation = None, runOptions=None, initialStateDetuning=None):
         """
         Executes a detuning protocol bein agnostic to the sweep shape.
         """
@@ -79,7 +79,10 @@ class DynamicsManager:
         tlist = self.nsToMeV * tlistNano
 
         # --- Initial state ---
-        rho0 = self.obtainInitialGroundState(detuning=eiValues[0], cutOffN=cutOffN)
+        if initialStateDetuning is None:
+            rho0 = self.obtainInitialGroundState(detuning=eiValues[0], bField = self.fixedParameters[DQDParameters.B_PARALLEL.value],cutOffN=cutOffN)
+        else:
+            rho0 = self.obtainInitialGroundState(detuning=initialStateDetuning, bField = self.fixedParameters[DQDParameters.B_PARALLEL.value] ,cutOffN=cutOffN)
 
         if filter:
             # === Apply physical limitations ===
@@ -126,7 +129,115 @@ class DynamicsManager:
         # === Solve dynamics ===
         result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=collapseOpsEffQObj, options=runOptions)
         return result
+
+
+    def magneticFieldProtocol(self, tlistNano, bValues, cutOffN=None, dephasing = None, spinRelaxation = None, runOptions=None, initialStateField=None, initialStateDetuning=None):
+        """
+        Executes a magnetic protocol bein agnostic to the sweep shape.
+        """
+        # --- Convert times to meV
+        tlist = self.nsToMeV * tlistNano
+
+        # --- Initial state ---
+        if initialStateField is None:
+            if initialStateDetuning is None:
+                rho0 = self.obtainInitialGroundState(detuning = self.fixedParameters[DQDParameters.E_I.value], bField=bValues[0], cutOffN=cutOffN)
+            else:
+                rho0 = self.obtainInitialGroundState(detuning = initialStateDetuning, bField=bValues[0], cutOffN=cutOffN)
+        else:
+            if initialStateDetuning is None:
+                rho0 = self.obtainInitialGroundState(detuning = self.fixedParameters[DQDParameters.E_I.value], bField=initialStateField, cutOffN=cutOffN)
+            else:
+                rho0 = self.obtainInitialGroundState(detuning = self.fixedParameters[DQDParameters.E_I.value], bField=initialStateField, cutOffN=cutOffN)
+
+        # === Precompute effective Hamiltonians ===
+        hEffList = []
+        for bx in bValues:
+            params = self.fixedParameters.copy()
+            params[DQDParameters.B_PARALLEL.value] = bx
+            H_full = self._getProjecteHamiltonian(params)
+            if cutOffN is not None:
+                H00_eff = H_full[:cutOffN, :cutOffN]
+            else:
+                H00_eff,_ = self.schriefferWolff(H_full)
+            hEffList.append(Qobj(H00_eff))
+
+        def hEffTimeDependent(t, args):
+            idx = np.argmin(np.abs(tlist - t))
+            return hEffList[idx]
+        
+        # Get collapse operators which are the same for any detuning
+        collapseOps = []
+        if dephasing is not None:
+            collapseOps.extend(self._getProjectedDephasingOperators(dephasing))
+
+        if spinRelaxation is not None:
+            collapseOps.extend(self._getProjectedSpinRelaxationOperators(spinRelaxation))
+
+        if cutOffN is not None:
+            collapseOpsEff = [op[:cutOffN, :cutOffN] for op in collapseOps]
+        else:
+            _, collapseOpsEff = self.schriefferWolff(H_full, collapseOps)
+        collapseOpsEffQObj = [Qobj(op) for op in collapseOpsEff]
+
+        # === Solve dynamics ===
+        result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=collapseOpsEffQObj, options=runOptions)
+        return result
     
+    def combinedProtocol(self, tlistNano, bValues, eiValues, cutOffN=None, dephasing = None, spinRelaxation = None, runOptions=None, initialStateField=None, initialStateDetuning=None):
+        """
+        Executes a magnetic adn detuning protocol bein agnostic to the sweep shape.
+        """
+        # --- Convert times to meV
+        tlist = self.nsToMeV * tlistNano
+
+        # --- Initial state ---
+        if initialStateField is None:
+            if initialStateDetuning is None:
+                rho0 = self.obtainInitialGroundState(detuning = self.fixedParameters[DQDParameters.E_I.value], bField=bValues[0], cutOffN=cutOffN)
+            else:
+                rho0 = self.obtainInitialGroundState(detuning = initialStateDetuning, bField=bValues[0], cutOffN=cutOffN)
+        else:
+            if initialStateDetuning is None:
+                rho0 = self.obtainInitialGroundState(detuning = self.fixedParameters[DQDParameters.E_I.value], bField=initialStateField, cutOffN=cutOffN)
+            else:
+                rho0 = self.obtainInitialGroundState(detuning = self.fixedParameters[DQDParameters.E_I.value], bField=initialStateField, cutOffN=cutOffN)
+
+        # === Precompute effective Hamiltonians ===
+        hEffList = []
+        for index in range(len(bValues)):
+            params = self.fixedParameters.copy()
+            params[DQDParameters.B_PARALLEL.value] = bValues[index]
+            params[DQDParameters.E_I.value] = eiValues[index]
+            H_full = self._getProjecteHamiltonian(params)
+            if cutOffN is not None:
+                H00_eff = H_full[:cutOffN, :cutOffN]
+            else:
+                H00_eff,_ = self.schriefferWolff(H_full)
+            hEffList.append(Qobj(H00_eff))
+
+        def hEffTimeDependent(t, args):
+            idx = np.argmin(np.abs(tlist - t))
+            return hEffList[idx]
+        
+        # Get collapse operators which are the same for any detuning
+        collapseOps = []
+        if dephasing is not None:
+            collapseOps.extend(self._getProjectedDephasingOperators(dephasing))
+
+        if spinRelaxation is not None:
+            collapseOps.extend(self._getProjectedSpinRelaxationOperators(spinRelaxation))
+
+        if cutOffN is not None:
+            collapseOpsEff = [op[:cutOffN, :cutOffN] for op in collapseOps]
+        else:
+            _, collapseOpsEff = self.schriefferWolff(H_full, collapseOps)
+        collapseOpsEffQObj = [Qobj(op) for op in collapseOpsEff]
+
+        # === Solve dynamics ===
+        result = mesolve(hEffTimeDependent, rho0, tlist, c_ops=collapseOpsEffQObj, options=runOptions)
+        return result
+
     def obtainOriginalProtocolParameters(self, intervalTimes, totalPoints, interactionDetuning=None):
         """
         Original protocol is composed of a first sweep from 0 to the interaction detuning E, 
@@ -183,44 +294,131 @@ class DynamicsManager:
 
         return tlistNano, eiValues
     
-    def obtainGateZProtocolParameters(self, intervalTimes, totalPoints, interactionDetuning=None):
-            """
-            This protocol is composed of an initialization at 1.5*U0 detuning. Then a ramp down to interaction detuning E. 
-            In E, intervalTimes[1] plateau. The go back to 1.5*U0 for intervalTimes[2]/2 and go down again to E for intervalTimes[2]/2.
-            Stays again in E for intervalTimes[1]. Go up finally to 1.5*E for intervalTimes[2] and stays up for intervalTimes[3].
-            """
+    def obtainGateZProtocolParametersWithSlope(self, intervalTimes, totalPoints, interactionDetuning=None):
+        """
+        Construye el protocolo Z con rampas y mesetas según la siguiente secuencia:
 
-            tTotal = intervalTimes[0] + 2*intervalTimes[1]+ 2*intervalTimes[2]+ intervalTimes[3]
-            nValues = [int(intervalTimes[0] * totalPoints / tTotal), int(intervalTimes[1] * totalPoints / tTotal), 
-                       int(intervalTimes[1] * totalPoints / (2*tTotal)), int(intervalTimes[1] * totalPoints / (2*tTotal)),
-                       int(intervalTimes[1] * totalPoints / tTotal), int(intervalTimes[2] * totalPoints / tTotal),
-                       int(intervalTimes[3] * totalPoints / tTotal)]
+        1. Inicialización en U0 durante intervalTimes[0].
+        2. Rampa descendente a detuning de interacción E.
+        3. Meseta en E durante intervalTimes[1] - 0.15.
+        4. Secuencia "ida y vuelta":
+            - Rampa E -> U0 en intervalTimes[2]/3
+            - Meseta en U0 en intervalTimes[2]/3
+            - Rampa U0 -> E en intervalTimes[2]/3
+        5. Nueva meseta en E durante 3*intervalTimes[4] - 0.15.
+        6. Rampa E -> U0 en intervalTimes[0].
+        7. Meseta final en U0 durante intervalTimes[3].
+        """
+
+        # Offsets en las mesetas de E
+        offset = 0.15
+        t0, t1, t2, t3, t4 = intervalTimes
+
+        # Tiempo total según la secuencia del docstring
+        tTotal = 2*t0 + (t1 - offset) + (t4 - offset) + t2 + t3
+
+        # Distribución de puntos proporcional a cada segmento
+        nValues = [
+            int(t0 * totalPoints / tTotal),              # inicialización
+            int((t1 - offset) * totalPoints / tTotal),   # meseta E reducida
+            int((0.1*t2) * totalPoints / tTotal),          # rampa E->U0
+            int((0.8*t2) * totalPoints / tTotal),          # meseta U0
+            int((0.1*t2) * totalPoints / tTotal),          # rampa U0->E
+            int((t4 - offset) * totalPoints / tTotal), # meseta E larga reducida
+            int(t0 * totalPoints / tTotal),              # rampa E->U0
+            int(t3 * totalPoints / tTotal)               # meseta final U0
+        ]
+
+        # Detuning de interacción
+        if interactionDetuning is None:
+            interactionDetuning = self.fixedParameters[DQDParameters.E_I.value]
+        U0 = self.fixedParameters[DQDParameters.U0.value]
+
+        # Construcción lista de tiempos
+        tlistNano = np.concatenate([
+            np.linspace(0, t0, nValues[0], endpoint=False),
+            np.linspace(t0, t0 + (t1 - offset), nValues[1], endpoint=False),
+            np.linspace(t0 + (t1 - offset),
+                        t0 + (t1 - offset) + 0.1*t2, nValues[2], endpoint=False),
+            np.linspace(t0 + (t1 - offset) + 0.1*t2,
+                        t0 + (t1 - offset) + 0.9*t2, nValues[3], endpoint=False),
+            np.linspace(t0 + (t1 - offset) + 0.9*t2,
+                        t0 + (t1 - offset) + t2, nValues[4], endpoint=False),
+            np.linspace(t0 + (t1 - offset) + t2,
+                        t0 + (t1 - offset) + t2 + (t4 - offset), nValues[5], endpoint=False),
+            np.linspace(t0 + (t1 - offset) + t2 + (t4 - offset),
+                        t0 + (t1 - offset) + t2 + (t4 - offset) + t0, nValues[6], endpoint=False),
+            np.linspace(2*t0 + (t1 - offset) + t2 + (t4 - offset),
+                        tTotal, nValues[7])
+        ])
+
+        # Construcción lista de valores de detuning
+        eiValues = np.concatenate([
+            np.linspace(U0, interactionDetuning, nValues[0], endpoint=False), # arranque en 2U0
+            np.full(nValues[1], interactionDetuning),                             # meseta E reducida
+            np.linspace(interactionDetuning, U0, nValues[2]),                     # rampa E->U0
+            np.full(nValues[3], U0),                                              # meseta U0
+            np.linspace(U0, interactionDetuning, nValues[4]),                     # rampa U0->E
+            np.full(nValues[5], interactionDetuning),                             # meseta E larga reducida
+            np.linspace(interactionDetuning, U0, nValues[6]),                     # rampa E->U0
+            np.full(nValues[7], U0)                                               # meseta final U0
+        ])
+
+        return tlistNano, eiValues
+
+
+
+    def buildGenericProtocolParameters(self, listSlopes, totalPoints):
+        """
+        Build a generic detuning protocol from a list of segments.
+        
+        Args:
+            listSlopes: list of lists, each element is [detuningStart, detuningEnd, duration]
+            totalPoints: int, total number of points in the concatenated protocol
+        
+        Returns:
+            tlistNano: np.array, concatenated time list
+            eiValues: np.array, concatenated detuning values
+        """
+        
+        # Total duration
+        totalTime = sum(seg[2] for seg in listSlopes)
+        
+        # Number of points per segment (proportional to segment duration)
+        nValues = [max(1, int(seg[2] * totalPoints / totalTime)) for seg in listSlopes]
+        
+        tlistNano = []
+        eiValues = []
+        tAcc = 0.0  # accumulated time
+        
+        for seg, nPoints in zip(listSlopes, nValues):
+            tStart = tAcc
+            tEnd = tAcc + seg[2]
             
-            tlistNano = np.concatenate([
-                np.linspace(0, intervalTimes[0], nValues[0], endpoint=False),
-                np.linspace(intervalTimes[0], intervalTimes[0] + intervalTimes[1], nValues[1], endpoint=False),
-                np.linspace(intervalTimes[0] + intervalTimes[1], intervalTimes[0] + intervalTimes[1] + intervalTimes[2]/2, nValues[2], endpoint=False),
-                np.linspace( intervalTimes[0] + intervalTimes[1] + intervalTimes[2]/2, intervalTimes[0] + intervalTimes[1] + intervalTimes[2], nValues[3], endpoint=False),
-                np.linspace( intervalTimes[0] + intervalTimes[1] + intervalTimes[2], intervalTimes[0] + 2*intervalTimes[1] + intervalTimes[2], nValues[4], endpoint=False),
-                np.linspace( intervalTimes[0] + 2*intervalTimes[1] + intervalTimes[2], intervalTimes[0] + 2*intervalTimes[1] + 2*intervalTimes[2], nValues[5], endpoint=False),
-                np.linspace( intervalTimes[0] + 2*intervalTimes[1] + 2*intervalTimes[2], tTotal, nValues[6])
-            ])
+            # Time array for this segment
+            if nPoints == 1:
+                tSegment = np.array([tStart])
+            else:
+                tSegment = np.linspace(tStart, tEnd, nPoints, endpoint=False)
+            
+            # Detuning array for this segment
+            detStart, detEnd = seg[0], seg[1]
+            if detStart == detEnd:
+                eSegment = np.full(nPoints, detStart)
+            else:
+                eSegment = np.linspace(detStart, detEnd, nPoints, endpoint=False)
+            
+            tlistNano.append(tSegment)
+            eiValues.append(eSegment)
+            
+            tAcc = tEnd  # update accumulated time for next segment
+        
+        # Concatenate all segments
+        tlistNano = np.concatenate(tlistNano)
+        eiValues = np.concatenate(eiValues)
+        
+        return tlistNano, eiValues
 
-            if interactionDetuning is None:
-                interactionDetuning = self.fixedParameters[DQDParameters.E_I.value]
-            eiIntervals = [1.5* self.fixedParameters[DQDParameters.U0.value],
-                        interactionDetuning]
-            eiValues = np.concatenate([
-                np.linspace(eiIntervals[0], eiIntervals[1], nValues[0], endpoint=False),
-                np.full(nValues[1], eiIntervals[1]),
-                np.linspace(eiIntervals[1], eiIntervals[0], nValues[2]),
-                np.linspace(eiIntervals[0], eiIntervals[1], nValues[3], endpoint=False),
-                np.full(nValues[4], eiIntervals[1]),
-                np.linspace(eiIntervals[1], eiIntervals[0], nValues[5]),
-                np.full(nValues[6], eiIntervals[0])
-            ])
-
-            return tlistNano, eiValues
     
     def obtainRabiOscillationParameters(self, interactionTime, totalPoints, interactionDetuning=None):
         tlistNano = np.linspace(0,interactionTime,totalPoints)
@@ -433,11 +631,15 @@ class DynamicsManager:
             return 0.0
         return 1.0 / (1.0 / t2star_ns + 1.0 / (2.0 * t1_ns))
         
-    def obtainInitialGroundState(self, detuning = None, cutOffN = None):
+    def obtainInitialGroundState(self, detuning = None, cutOffN = None, bField = None):
         parameters = deepcopy(self.fixedParameters)
         parameters[DQDParameters.E_I.value] = 0.0
+        parameters[DQDParameters.B_PARALLEL.value] = 0.1
         if detuning is not None:
             parameters[DQDParameters.E_I.value] = detuning
+
+        if bField is not None:
+            parameters[DQDParameters.B_PARALLEL.value] = bField
 
         H_full = self._getProjecteHamiltonian(parameters)
         if cutOffN is not None:
