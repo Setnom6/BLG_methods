@@ -188,7 +188,9 @@ class DynamicsManager:
 
     def buildGenericProtocolParameters(self, listSlopes, totalPoints):
         """
-        Build a generic detuning protocol from a list of segments.
+        Build a generic detuning protocol from a list of segments,
+        ignoring segments with duration < 1e-10, and distributing
+        totalPoints proportionally among the remaining segments.
         
         Args:
             listSlopes: list of lists, each element is [detuningStart, detuningEnd, duration]
@@ -198,18 +200,31 @@ class DynamicsManager:
             tlistNano: np.array, concatenated time list
             eiValues: np.array, concatenated detuning values
         """
+        # Filter out segments with negligible duration
+        filteredSlopes = [seg for seg in listSlopes if seg[2] >= 1e-10]
         
+        if not filteredSlopes:
+            return np.array([]), np.array([])  # nothing to build
+
         # Total duration
-        totalTime = sum(seg[2] for seg in listSlopes)
+        totalTime = sum(seg[2] for seg in filteredSlopes)
         
-        # Number of points per segment (proportional to segment duration)
-        nValues = [max(1, int(seg[2] * totalPoints / totalTime)) for seg in listSlopes]
+        # Initial number of points per segment (proportional to duration)
+        rawPoints = [seg[2] * totalPoints / totalTime for seg in filteredSlopes]
+        nValues = [int(rp) for rp in rawPoints]
+        
+        # Adjust to ensure the sum of points is exactly totalPoints
+        pointsDiff = totalPoints - sum(nValues)
+        # Distribute remaining points to segments with largest fractional part
+        fractionalParts = [rp - int(rp) for rp in rawPoints]
+        for idx in sorted(range(len(filteredSlopes)), key=lambda i: fractionalParts[i], reverse=True)[:pointsDiff]:
+            nValues[idx] += 1
         
         tlistNano = []
         parameterValues = []
         tAcc = 0.0  # accumulated time
         
-        for seg, nPoints in zip(listSlopes, nValues):
+        for seg, nPoints in zip(filteredSlopes, nValues):
             tStart = tAcc
             tEnd = tAcc + seg[2]
             
@@ -236,6 +251,7 @@ class DynamicsManager:
         parameterValues = np.concatenate(parameterValues)
         
         return tlistNano, parameterValues
+
     
     def densityToSTQubit(self, rho4, iSym, iAnti):
         """
@@ -377,6 +393,63 @@ class DynamicsManager:
                 sumTotal.append(singletPopulation.real + tripletPopulation.real)
 
         return np.array(sumSinglet), np.array(sumTriplet), np.array(sumTotal)
+
+
+    def computeSingletTripletEnergyDifference(self, eiValues, cutOffN=None, iSym=None, iAnti=None):
+        """
+        Compute ΔE(t) = E_S(t) - E_T(t) between singlet and triplet subspaces
+        by projecting the effective Hamiltonian onto the {|S>,|T>} basis.
+
+        Parameters
+        ----------
+        eiValues : array_like
+            Detuning values (meV) for which to evaluate the Hamiltonian.
+        cutOffN : int, optional
+            Dimension cutoff for the effective Hamiltonian.
+        iSym : list[int], optional
+            Indices for the singlet subspace in the cutoff Hamiltonian.
+        iAnti : list[int], optional
+            Indices for the triplet subspace in the cutoff Hamiltonian.
+
+        Returns
+        -------
+        deltaE : np.ndarray
+            Array of shape (len(eiValues),), with energy differences ΔE at each detuning.
+        """
+        deltaE = []
+
+        for ei in eiValues:
+            # --- Construir Hamiltoniano en este detuning
+            params = self.fixedParameters.copy()
+            params[DQDParameters.E_I.value] = ei
+            H_full = self._getProjecteHamiltonian(params)
+
+            if cutOffN is not None:
+                H_eff = H_full[:cutOffN, :cutOffN]
+            else:
+                H_eff, _ = self.schriefferWolff(H_full)
+
+            # --- Proyección al subespacio {S,T}
+            s, t = np.array(iSym), np.array(iAnti)
+            HSS = np.trace(H_eff[np.ix_(s, s)])
+            HTT = np.trace(H_eff[np.ix_(t, t)])
+            HST = np.sum(H_eff[np.ix_(s, t)])
+            HTS = np.conjugate(HST)
+
+            H2 = np.array([[HSS, HST],
+                        [HTS, HTT]], dtype=complex)
+
+            # Normalizar (opcional: dividir por tamaño del subespacio)
+            dimS, dimT = len(s), len(t)
+            H2[0, 0] /= dimS if dimS > 0 else 1
+            H2[1, 1] /= dimT if dimT > 0 else 1
+
+            # --- Diagonalizar 2x2 proyectado
+            evals, _ = np.linalg.eigh(H2)
+            deltaE.append(np.diff(evals)[0].real)  # E_high - E_low
+
+        return np.array(deltaE)
+
     
     
     def saveResults(self, populations=None, times=None, name=""):

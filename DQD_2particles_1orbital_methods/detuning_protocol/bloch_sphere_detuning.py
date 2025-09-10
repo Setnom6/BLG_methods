@@ -34,6 +34,10 @@ def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
     # Qubit populations
     sumSinglet, sumTriplet, sum4States = DM.getSingletTripletPopulations(populations, cutOff=cutOffN)
 
+    # --- Compute ΔE_ST con la nueva función
+    deltaE = DM.computeSingletTripletEnergyDifference(eiValues, cutOffN=cutOffN, iSym=iSym, iAnti=iAnti)
+
+
     # --- Create figure
     fig = plt.figure(figsize=(12, 10))
     gs = fig.add_gridspec(3, 2, height_ratios=[1.0, 0.3, 1.0])
@@ -53,9 +57,23 @@ def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
     ax1.set_ylabel('Population'); ax1.set_title("Individual populations"); ax1.grid()
     ax_legend.axis("off"); ax_legend.legend(lines, labels, loc="center", ncol=2)
 
+    # Eje izquierdo: detuning
     ax2.plot(tlistNano, eiValues, color='black', linewidth=2)
-    ax2.set_ylabel(r'$E_I$ (meV)'); ax2.set_xlabel("Time (ns)")
-    ax2.set_title('Detuning sweep'); ax2.grid()
+    ax2.set_ylabel(r'$E_I$ (meV)')
+    ax2.set_xlabel("Time (ns)")
+    ax2.set_title('Detuning sweep & ΔE_ST')
+    ax2.grid()
+
+    # Eje derecho: ΔE_ST
+    ax2b = ax2.twinx()
+    ax2b.plot(tlistNano, deltaE, color='tab:orange', linewidth=2, linestyle="--", label=r'$\Delta E_{ST}$')
+    ax2b.set_ylabel(r'$\Delta E_{ST}$ (meV)', color='tab:orange')
+    ax2b.tick_params(axis='y', labelcolor='tab:orange')
+
+    # Leyenda combinada
+    lines_ax2, labels_ax2 = ax2.get_legend_handles_labels()
+    lines_ax2b, labels_ax2b = ax2b.get_legend_handles_labels()
+    ax2b.legend(lines_ax2 + lines_ax2b, labels_ax2 + labels_ax2b, loc="upper right")
 
     ax3.plot(tlistNano, sumTriplet, label='T (antisym)', linestyle='--', color='tab:blue')
     ax3.plot(tlistNano, sumSinglet, label='S (sym)', linestyle='--', color='tab:green')
@@ -139,19 +157,29 @@ if __name__ == "__main__":
     setupLogger()
     logging.info(f"Running detuning protocol interaction...")
 
-    factor = 0.5
+    def computeSlopeTime(yInitial, yFinal, slope=0.5):
+        #Fix any slope to 2 ns for each meV
+        deltaY = yFinal - yInitial
+        x = deltaY / slope
+        return x
+
+    peakDetuning = DM.fixedParameters[DQDParameters.U0.value]
+    slopeTime = computeSlopeTime(interactionDetuning, peakDetuning)
+    phaseAccumulationTime = 1.5*expectedPeriod
+
     slopesShapes = [
-        [DM.fixedParameters[DQDParameters.U0.value], interactionDetuning, 1.0*expectedPeriod],
-        [interactionDetuning, interactionDetuning, 0.25 * expectedPeriod],
-        [interactionDetuning, DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
-        [DM.fixedParameters[DQDParameters.U0.value], DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
-        [DM.fixedParameters[DQDParameters.U0.value], interactionDetuning, factor * expectedPeriod],
-        [interactionDetuning, interactionDetuning, 0.75 * expectedPeriod],
-        [interactionDetuning, DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
-        [DM.fixedParameters[DQDParameters.U0.value], DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
+        [peakDetuning, peakDetuning, phaseAccumulationTime/2.0],
+        [peakDetuning, interactionDetuning, slopeTime],
+        [interactionDetuning, interactionDetuning, 1.25 * expectedPeriod-0.10],
+        [interactionDetuning,peakDetuning, slopeTime],
+        [peakDetuning, peakDetuning, phaseAccumulationTime],
+        [peakDetuning, interactionDetuning, slopeTime],
+        [interactionDetuning, interactionDetuning, 1.75 * expectedPeriod-0.15],
+        [interactionDetuning,peakDetuning, slopeTime],
+        [peakDetuning, peakDetuning, phaseAccumulationTime/2.0]
     ]
 
-    initialStateDet = None
+    initialStateDet = DM.fixedParameters[DQDParameters.U0.value]
     initialStateBParallel = None
     totalPoints = 1200
     runOptions = DM.getRunOptions(atol=1e-8, rtol=1e-6, nsteps=10000)

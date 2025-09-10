@@ -12,16 +12,28 @@ from src.DynamicsManager import DynamicsManager, DQDParameters, setupLogger
 def phiFromP0(p0):
     return 2 * np.arccos(np.sqrt(p0))
 
-def runSingleFactor(DM, expectedPeriod, interactionDetuning, factor):
+def runSingleFactor(DM, expectedPeriod, interactionDetuning, phaseAccumulationTime, topValue):
+    def computeSlopeTime(yInitial, yFinal, slope=0.5):
+        #Fix any slope to 2 ns for each meV
+        deltaY = yFinal - yInitial
+        x = deltaY / slope
+        return x
+
+    peakDetuning = DM.fixedParameters[DQDParameters.U0.value]
+    slopeTimeOutside = computeSlopeTime(interactionDetuning, peakDetuning)
+    slopeTimeInside =  computeSlopeTime(interactionDetuning, topValue)
+    phaseAccumulationTime = 1.5*expectedPeriod
+
     slopesShapes = [
-        [DM.fixedParameters[DQDParameters.U0.value], interactionDetuning, 1.0*expectedPeriod],
-        [interactionDetuning, interactionDetuning, 0.25 * expectedPeriod],
-        [interactionDetuning, DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
-        [DM.fixedParameters[DQDParameters.U0.value], DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
-        [DM.fixedParameters[DQDParameters.U0.value], interactionDetuning, factor * expectedPeriod],
-        [interactionDetuning, interactionDetuning, 0.75 * expectedPeriod],
-        [interactionDetuning, DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
-        [DM.fixedParameters[DQDParameters.U0.value], DM.fixedParameters[DQDParameters.U0.value], factor * expectedPeriod],
+        [peakDetuning, peakDetuning, phaseAccumulationTime/2.0],
+        [peakDetuning, interactionDetuning, slopeTimeOutside],
+        [interactionDetuning, interactionDetuning, 1.25 * expectedPeriod-0.10],
+        [interactionDetuning,peakDetuning, slopeTimeInside],
+        [peakDetuning, peakDetuning, phaseAccumulationTime],
+        [peakDetuning, interactionDetuning, slopeTimeInside],
+        [interactionDetuning, interactionDetuning, 1.75 * expectedPeriod-0.15],
+        [interactionDetuning,peakDetuning, slopeTimeOutside],
+        [peakDetuning, peakDetuning, phaseAccumulationTime/2.0]
     ]
 
     initialStateDet = None
@@ -101,33 +113,57 @@ if __name__ == "__main__":
     setupLogger()
     DM = DynamicsManager(fixedParameters)
 
-    factors = np.linspace(0.01, 1.0, 100) 
+    phaseAccumulationTimes = np.linspace(0.01*expectedPeriod, 2.0*expectedPeriod, 100) 
+    topValues = np.linspace(interactionDetuning*1.001, DM.fixedParameters[DQDParameters.U0.value], 7)
 
-    # --- Paralelizar la simulación
-    maxCores = min(24, cpu_count())
-    logging.info(f"Using {maxCores} cores with joblib.")
-    results = Parallel(n_jobs=maxCores)(delayed(runSingleFactor)(DM, expectedPeriod, interactionDetuning, f) 
-                                  for f in factors)
-
-    resultsP0, resultsP1, resultsPhi = zip(*results)
-    xValues = 6 * factors  # normalizado por expectedPeriod
-
-    # --- Graficar
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8))
-    ax1.plot(xValues, resultsP0, "o-", label="Final P0")
-    ax1.plot(xValues, resultsP1, "o-", label="Final P1")
+
+    for tv in topValues:
+
+        maxCores = min(24, cpu_count())
+        logging.info(f"Running with topValue={tv}, using {maxCores} cores.")
+        results = Parallel(n_jobs=maxCores)(delayed(runSingleFactor)(DM, expectedPeriod, interactionDetuning, f, tv) 
+                                      for f in phaseAccumulationTimes)
+
+        resultsP0, resultsP1, resultsPhi = zip(*results)
+        xValues = phaseAccumulationTimes/expectedPeriod  # normalizado por expectedPeriod
+
+        # --- Graficar curvas para cada topValue
+        ax1.plot(xValues, resultsP0, "o-", label=f"P0 (detuning peak / int det ={tv/interactionDetuning})")
+        ax1.plot(xValues, resultsP1, "o-", label=f"P1 (detuning peak / int det ={tv/interactionDetuning})")
+        ax2.plot(xValues, resultsPhi, "s-", label=f"Phi (detuning peak / int det ={tv/interactionDetuning})")
+
+        # --- FFT para obtener frecuencia y periodo dominante ---
+
+        # señal: eliminamos el offset
+        y = np.array(resultsPhi) - np.mean(resultsPhi)
+        x = np.array(xValues)
+        N = len(y)
+        dt = x[1] - x[0]  # paso en eje x
+
+        fftVals = np.fft.rfft(y)
+        fftFreqs = np.fft.rfftfreq(N, d=dt)
+
+        dominantFreq = fftFreqs[np.argmax(np.abs(fftVals))]
+        dominantPeriod = 1 / dominantFreq if dominantFreq != 0 else np.inf
+
+        logging.info(f"\n=== Análisis FFT ===")
+        logging.info(f"Frecuencia dominante ≈ {dominantFreq:.4f} (1/unidades de xValues)")
+        logging.info(f"Periodo dominante ≈ {dominantPeriod:.4f} (unidades de xValues)\n")
+
     ax1.set_xlabel("Accumulated time / period")
     ax1.set_ylabel("Final Population")
     ax1.legend()
     ax1.grid()
 
-    ax2.plot(xValues, resultsPhi, "s-", color="tab:red", label="Phi")
     ax2.set_xlabel("Accumulated time / period")
     ax2.set_ylabel("Phi (grad)")
-    ax2.set_ylim(0, 360)
+    ax2.set_ylim(0, 180)
     ax2.legend()
     ax2.grid()
 
     plt.tight_layout()
-    DM.saveResults(name="Phase_iteration")
-    logging.info(f"Simulations completed.\n")
+    DM.saveResults(name="Phase_accumulation")
+    logging.info(f"Simulations completed for all topValues.\n")
+
+
