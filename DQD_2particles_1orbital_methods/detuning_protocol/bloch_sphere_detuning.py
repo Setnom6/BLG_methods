@@ -18,10 +18,11 @@ def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
 
     # --- Precompute Bloch vectors
     rhos = result.states if hasattr(result, "states") else result
+
+    # Calcular trayectoria del Bloch vector
     blochVectors = []
     for rho in rhos:
-        rho2 = DM.densityToSTQubit(rho, iSym, iAnti)
-        blochVectors.append(DM.rho2ToBloch(rho2))
+        blochVectors.append(DM.rhoToBlochHybrid(rho, iSym, iAnti))
     blochVectors = np.array(blochVectors)
 
     # --- Compute populations
@@ -61,19 +62,22 @@ def animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
     ax2.plot(tlistNano, eiValues, color='black', linewidth=2)
     ax2.set_ylabel(r'$E_I$ (meV)')
     ax2.set_xlabel("Time (ns)")
-    ax2.set_title('Detuning sweep & ΔE_ST')
+    ax2.set_title('Detuning sweep')
+    lines_ax2, labels_ax2 = ax2.get_legend_handles_labels()
     ax2.grid()
 
-    # Eje derecho: ΔE_ST
+    """# Eje derecho: ΔE_ST
     ax2b = ax2.twinx()
     ax2b.plot(tlistNano, deltaE, color='tab:orange', linewidth=2, linestyle="--", label=r'$\Delta E_{ST}$')
     ax2b.set_ylabel(r'$\Delta E_{ST}$ (meV)', color='tab:orange')
     ax2b.tick_params(axis='y', labelcolor='tab:orange')
-
-    # Leyenda combinada
-    lines_ax2, labels_ax2 = ax2.get_legend_handles_labels()
     lines_ax2b, labels_ax2b = ax2b.get_legend_handles_labels()
     ax2b.legend(lines_ax2 + lines_ax2b, labels_ax2 + labels_ax2b, loc="upper right")
+    """
+
+    # Leyenda combinada
+
+
 
     ax3.plot(tlistNano, sumTriplet, label='T (antisym)', linestyle='--', color='tab:blue')
     ax3.plot(tlistNano, sumSinglet, label='S (sym)', linestyle='--', color='tab:green')
@@ -163,28 +167,32 @@ if __name__ == "__main__":
         x = deltaY / slope
         return x
 
-    peakDetuning = DM.fixedParameters[DQDParameters.U0.value]
-    slopeTime = computeSlopeTime(interactionDetuning, peakDetuning)
-    phaseAccumulationTime = 1.5*expectedPeriod
+    initialTime = finalTime = expectedPeriod*1.0
+    peakDetuningreadOut = DM.fixedParameters[DQDParameters.U0.value]
+    slopeTimeOutside = computeSlopeTime(interactionDetuning, peakDetuningreadOut)
+
+    peakDetuningPhase = 0.0
+    slopeTimeInside = 0.0
+    phaseAccumulationTime = 0.0
 
     slopesShapes = [
-        [peakDetuning, peakDetuning, phaseAccumulationTime/2.0],
-        [peakDetuning, interactionDetuning, slopeTime],
-        [interactionDetuning, interactionDetuning, 1.25 * expectedPeriod-0.10],
-        [interactionDetuning,peakDetuning, slopeTime],
-        [peakDetuning, peakDetuning, phaseAccumulationTime],
-        [peakDetuning, interactionDetuning, slopeTime],
-        [interactionDetuning, interactionDetuning, 1.75 * expectedPeriod-0.15],
-        [interactionDetuning,peakDetuning, slopeTime],
-        [peakDetuning, peakDetuning, phaseAccumulationTime/2.0]
+        [peakDetuningreadOut, peakDetuningreadOut, initialTime],
+        [peakDetuningreadOut, interactionDetuning, slopeTimeOutside],
+        [interactionDetuning, interactionDetuning, 3.0*expectedPeriod-0.15],
+        [interactionDetuning,peakDetuningPhase, slopeTimeInside],
+        [peakDetuningPhase, peakDetuningPhase, phaseAccumulationTime],
+        [peakDetuningPhase, interactionDetuning, slopeTimeInside],
+        [interactionDetuning, interactionDetuning, 0.0],
+        [interactionDetuning,peakDetuningreadOut, slopeTimeOutside],
+        [peakDetuningreadOut, peakDetuningreadOut, finalTime]
     ]
 
     initialStateDet = DM.fixedParameters[DQDParameters.U0.value]
     initialStateBParallel = None
     totalPoints = 1200
     runOptions = DM.getRunOptions(atol=1e-8, rtol=1e-6, nsteps=10000)
-    T1 = 100000
-    T2star = 100000
+    T1 = 10
+    T2star = 10
     activateDephasing = False
     activateSpinRelaxation = False
     cutOffN = None
@@ -211,8 +219,8 @@ if __name__ == "__main__":
 
     logging.info("Detuning protocol completed.")
 
-    iSym = [DM.invCorrespondence["LL,S,T-"], DM.invCorrespondence["LR,S,T-"]]
-    iAnti = [DM.invCorrespondence["LR,T0,T-"], DM.invCorrespondence["LR,T-,T-"]]
+    iSym = [ DM.invCorrespondence["LR,S,T-"], DM.invCorrespondence["LL,S,T-"]]
+    iAnti = [ DM.invCorrespondence["LR,T-,T-"], DM.invCorrespondence["LR,T0,T-"]]
 
     animateSTQubit(result, tlistNano, iSym, iAnti, eiValues, DM,
                        outFile=os.path.join(DM.figuresDir, 'bloch_animation.gif'),

@@ -253,40 +253,110 @@ class DynamicsManager:
         return tlistNano, parameterValues
 
     
-    def densityToSTQubit(self, rho4, iSym, iAnti):
+
+    @staticmethod
+    def buildSTQubitOperators(dim, iSym, iAnti):
         """
-        Project a NxN density matrix onto {|S>,|T>} qubit basis by disregarding internal coherences and maintaining coherences between the two subspaces.
-        The indices must be in agreement with the dimension of the density matrix given
+        Construye operadores embebidos para el qubit S/T dentro de un espacio de dimensión 'dim'.
+
+        - iSym: lista de índices del subespacio simétrico (singlete), primer elemento = representante.
+        - iAnti: lista de índices del subespacio antisimétrico (triplete), primer elemento = representante.
+        Retorna: P_Q, Sx, Sy, Sz
         """
-        if isinstance(rho4, Qobj):
-            rho = rho4.full()
+        if len(iSym) == 0 or len(iAnti) == 0:
+            raise ValueError("iSym y iAnti deben tener al menos un índice cada uno")
+
+        # vectores base
+        e = np.eye(dim)
+        ketS = Qobj(e[:, [iSym[0]]])  # representante singlete
+        ketT = Qobj(e[:, [iAnti[0]]]) # representante triplete
+
+        # proyectores de población (suman todo el subespacio indistinguible)
+        P_S = sum(Qobj(e[:, [i]])*Qobj(e[:, [i]]).dag() for i in iSym)
+        P_T = sum(Qobj(e[:, [j]])*Qobj(e[:, [j]]).dag() for j in iAnti)
+        P_Q = P_S + P_T
+
+        # operadores tipo Pauli embebidos
+        Sx = ketS*ketT.dag() + ketT*ketS.dag()
+        Sy = -1j*ketS*ketT.dag() + 1j*ketT*ketS.dag()
+        Sz = ketS*ketS.dag() - ketT*ketT.dag()
+
+        return P_Q, Sx, Sy, Sz
+
+
+    @staticmethod
+    def rhoToBloch(rhoFull, P_Q, Sx, Sy, Sz):
+        """
+        Calcula el vector de Bloch de rhoFull en el subespacio qubit definido por (P_Q, Sx, Sy, Sz).
+        """
+        if isinstance(rhoFull, Qobj):
+            rho = rhoFull
         else:
-            rho = np.asarray(rho4, dtype=complex)
-        s, t = np.array(iSym), np.array(iAnti)
+            rho = Qobj(np.asarray(rhoFull, dtype=complex))
 
-        rhoSS = np.trace(rho[np.ix_(s, s)])
-        rhoTT = np.trace(rho[np.ix_(t, t)])
-        rhoST = np.sum(rho[np.ix_(s, t)])
-        rhoTS = np.conjugate(rhoST)
+        # población dentro del subespacio
+        p = (rho*P_Q).tr().real
+        if p < 1e-12:
+            return np.array([0.0, 0.0, 0.0])
 
-        rho2 = np.array([[rhoSS, rhoST],
-                        [rhoTS, rhoTT]], dtype=complex)
-        rho2 /= np.trace(rho2)
-        return rho2
+        sx = ((rho*Sx).tr()/p).real
+        sy = ((rho*Sy).tr()/p).real
+        sz = ((rho*Sz).tr()/p).real
+
+        return np.array([sx, sy, sz], dtype=float)
     
-    def rho2ToBloch(self, rho2):
-        """Return Bloch vector (sx, sy, sz) from a 2x2 density matrix."""
-        rho01 = rho2[0, 1]
-        sx = 2*np.real(rho01)
-        sy = -2*np.imag(rho01)
-        sz = np.real(rho2[0, 0] - rho2[1, 1])
-        blochVec =  np.array([sx, sy, sz], dtype=float)
-        # Clip if norm slightly exceeds 1 (numerical errors / projection artifacts)
-        r = np.linalg.norm(blochVec)
-        if r > 1.0:
-            blochVec = blochVec / r
 
-        return blochVec
+
+    @staticmethod
+    def rhoToBlochHybrid(rhoFull, iSym, iAnti, sRep=None, tRep=None):
+        """
+        Calcula el Bloch vector de un qubit ST dentro de un subespacio definido por iSym / iAnti.
+        
+        - rhoFull: matriz densidad completa.
+        - iSym: lista de índices del subespacio simétrico (singlete).
+        - iAnti: lista de índices del subespacio antisimétrico (triplete).
+        - sRep: índice representante del subespacio simétrico para coherencias (opcional, default = iSym[0]).
+        - tRep: índice representante del subespacio antisimétrico para coherencias (opcional, default = iAnti[0]).
+        
+        Bloch vector híbrido:
+        - Sz: suma de poblaciones de todo el subespacio
+        - Sx, Sy: coherencias entre representantes
+        """
+        if sRep is None:
+            sRep = iSym[0]
+        if tRep is None:
+            tRep = iAnti[0]
+
+        # convertir a Qobj si es necesario
+        if not isinstance(rhoFull, Qobj):
+            rho = Qobj(np.asarray(rhoFull, dtype=complex))
+        else:
+            rho = rhoFull
+
+        # proyectores de población
+        P_S = sum(Qobj(np.eye(rho.shape[0])[:, [i]])*Qobj(np.eye(rho.shape[0])[:, [i]]).dag() for i in iSym)
+        P_T = sum(Qobj(np.eye(rho.shape[0])[:, [i]])*Qobj(np.eye(rho.shape[0])[:, [i]]).dag() for i in iAnti)
+        P_Q = P_S + P_T
+
+        # representantes para coherencias
+        ketS = Qobj(np.eye(rho.shape[0])[:, [sRep]])
+        ketT = Qobj(np.eye(rho.shape[0])[:, [tRep]])
+        Sx = ketS*ketT.dag() + ketT*ketS.dag()
+        Sy = -1j*ketS*ketT.dag() + 1j*ketT*ketS.dag()
+
+        # población en el subespacio
+        p = (rho*P_Q).tr().real
+        if p < 1e-12:
+            return np.array([0.0, 0.0, 0.0])
+
+        # coherencias
+        sx = ((rho*Sx).tr()/p).real
+        sy = ((rho*Sy).tr()/p).real
+        # Sz híbrido: diferencia de poblaciones de todo el subespacio
+        sz = (((rho*P_S).tr() - (rho*P_T).tr()) / p).real
+
+        return np.array([sx, sy, sz], dtype=float)
+
 
 
     
